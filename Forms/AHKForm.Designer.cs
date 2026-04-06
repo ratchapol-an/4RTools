@@ -1,4 +1,4 @@
-﻿using System.Windows.Forms;
+using System.Windows.Forms;
 
 namespace _4RTools.Forms
 {
@@ -92,6 +92,7 @@ namespace _4RTools.Forms
             this.cbDeactivated = new System.Windows.Forms.CheckBox();
             this.cbWithNoClick = new System.Windows.Forms.CheckBox();
             this.cbWithClick = new System.Windows.Forms.CheckBox();
+            this.chkToggleSpam = new System.Windows.Forms.CheckBox();
             ((System.ComponentModel.ISupportInitialize)(this.txtSpammerDelay)).BeginInit();
             this.panel2.SuspendLayout();
             this.panel4.SuspendLayout();
@@ -614,6 +615,7 @@ namespace _4RTools.Forms
             this.groupAhkConfig.Controls.Add(this.chkNoShift);
             this.groupAhkConfig.Controls.Add(this.pbUpAndDownArrow);
             this.groupAhkConfig.Controls.Add(this.chkMouseFlick);
+            this.groupAhkConfig.Controls.Add(this.chkToggleSpam);
             this.groupAhkConfig.Controls.Add(this.ahkSpeedBoost);
             this.groupAhkConfig.Controls.Add(this.groupBox2);
             this.groupAhkConfig.Controls.Add(this.ahkCompatibility);
@@ -666,6 +668,17 @@ namespace _4RTools.Forms
             this.chkMouseFlick.Text = "Mouse Flick";
             this.chkMouseFlick.UseVisualStyleBackColor = true;
             this.chkMouseFlick.CheckedChanged += new System.EventHandler(this.chkMouseFlick_CheckedChanged);
+            // 
+            // chkToggleSpam
+            // 
+            this.chkToggleSpam.AutoSize = true;
+            this.chkToggleSpam.Location = new System.Drawing.Point(198, 20);
+            this.chkToggleSpam.Name = "chkToggleSpam";
+            this.chkToggleSpam.Size = new System.Drawing.Size(135, 17);
+            this.chkToggleSpam.TabIndex = 40;
+            this.chkToggleSpam.Text = "Toggle spam (press 1x)";
+            this.chkToggleSpam.UseVisualStyleBackColor = true;
+            this.chkToggleSpam.CheckedChanged += new System.EventHandler(this.chkToggleSpam_CheckedChanged);
             // 
             // ahkSpeedBoost
             // 
@@ -881,5 +894,6 @@ namespace _4RTools.Forms
         private PictureBox pictureBox1;
         private RadioButton ahkCompatibility;
         private GroupBox groupBox4;
+        private CheckBox chkToggleSpam;
     }
 }

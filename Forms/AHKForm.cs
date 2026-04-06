@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using _4RTools.Utils;
@@ -33,6 +33,7 @@ namespace _4RTools.Forms
                     this.txtSpammerDelay.Text = ProfileSingleton.GetCurrent().AHK.AhkDelay.ToString();
                     this.chkNoShift.Checked = ProfileSingleton.GetCurrent().AHK.noShift;
                     this.chkMouseFlick.Checked = ProfileSingleton.GetCurrent().AHK.mouseFlick;
+                    this.chkToggleSpam.Checked = ProfileSingleton.GetCurrent().AHK.toggleSpamMode;
                     this.DisableControlsIfSpeedBoost();
 
                     Dictionary<string, KeyConfig> ahkClones = new Dictionary<string, KeyConfig>(ProfileSingleton.GetCurrent().AHK.AhkEntries);
@@ -145,6 +146,13 @@ namespace _4RTools.Forms
         {
             CheckBox chk = sender as CheckBox;
             ProfileSingleton.GetCurrent().AHK.noShift = chk.Checked;
+            ProfileSingleton.SetConfiguration(ProfileSingleton.GetCurrent().AHK);
+        }
+
+        private void chkToggleSpam_CheckedChanged(object sender, EventArgs e)
+        {
+            CheckBox chk = sender as CheckBox;
+            ProfileSingleton.GetCurrent().AHK.toggleSpamMode = chk.Checked;
             ProfileSingleton.SetConfiguration(ProfileSingleton.GetCurrent().AHK);
         }
 

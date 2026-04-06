@@ -1,4 +1,4 @@
-﻿using System.Windows.Forms;
+using System.Windows.Forms;
 
 namespace _4RTools.Forms
 {
@@ -49,6 +49,8 @@ namespace _4RTools.Forms
             this.tabControlAutopot = new System.Windows.Forms.TabControl();
             this.tabPageAutopot = new System.Windows.Forms.TabPage();
             this.tabPageYggAutopot = new System.Windows.Forms.TabPage();
+            this.tabPageAutoTeleport = new System.Windows.Forms.TabPage();
+            this.tabPageAutoItemBuff = new System.Windows.Forms.TabPage();
             this.tabPageServer = new System.Windows.Forms.TabPage();
             this.tabPageProfiles = new System.Windows.Forms.TabPage();
             this.tabMacroSwitch = new System.Windows.Forms.TabPage();
@@ -60,6 +62,7 @@ namespace _4RTools.Forms
             this.tabSkillTimer = new System.Windows.Forms.TabPage();
             this.atkDefMode = new System.Windows.Forms.TabControl();
             this.tabDebuffRecovery = new System.Windows.Forms.TabPage();
+            this.tabPageRemoteEndpoints = new System.Windows.Forms.TabPage();
             this.characterName = new System.Windows.Forms.Label();
             this.lblCharacterName = new System.Windows.Forms.Label();
             this.OnOffPanel = new System.Windows.Forms.Panel();
@@ -148,7 +151,7 @@ namespace _4RTools.Forms
             this.panelFooter.Controls.Add(this.lbPowered);
             this.panelFooter.Controls.Add(this.lblLinkDiscord);
             this.panelFooter.Controls.Add(this.panelDiscImage);
-            this.panelFooter.Location = new System.Drawing.Point(-3, 580);
+            this.panelFooter.Location = new System.Drawing.Point(-3, 715);
             this.panelFooter.Name = "panelFooter";
             this.panelFooter.Size = new System.Drawing.Size(903, 43);
             this.panelFooter.TabIndex = 16;
@@ -191,11 +194,13 @@ namespace _4RTools.Forms
             // 
             this.tabControlAutopot.Controls.Add(this.tabPageAutopot);
             this.tabControlAutopot.Controls.Add(this.tabPageYggAutopot);
+            this.tabControlAutopot.Controls.Add(this.tabPageAutoTeleport);
+            this.tabControlAutopot.Controls.Add(this.tabPageAutoItemBuff);
             this.tabControlAutopot.ImageList = this.TabControlImageList;
             this.tabControlAutopot.Location = new System.Drawing.Point(15, 83);
             this.tabControlAutopot.Name = "tabControlAutopot";
             this.tabControlAutopot.SelectedIndex = 0;
-            this.tabControlAutopot.Size = new System.Drawing.Size(308, 165);
+            this.tabControlAutopot.Size = new System.Drawing.Size(308, 300);
             this.tabControlAutopot.TabIndex = 25;
             // 
             // tabPageAutopot
@@ -203,7 +208,7 @@ namespace _4RTools.Forms
             this.tabPageAutopot.Location = new System.Drawing.Point(4, 22);
             this.tabPageAutopot.Name = "tabPageAutopot";
             this.tabPageAutopot.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPageAutopot.Size = new System.Drawing.Size(300, 139);
+            this.tabPageAutopot.Size = new System.Drawing.Size(300, 274);
             this.tabPageAutopot.TabIndex = 0;
             this.tabPageAutopot.Text = "Autopot";
             this.tabPageAutopot.UseVisualStyleBackColor = true;
@@ -213,10 +218,30 @@ namespace _4RTools.Forms
             this.tabPageYggAutopot.Location = new System.Drawing.Point(4, 22);
             this.tabPageYggAutopot.Name = "tabPageYggAutopot";
             this.tabPageYggAutopot.Padding = new System.Windows.Forms.Padding(3);
-            this.tabPageYggAutopot.Size = new System.Drawing.Size(481, 139);
+            this.tabPageYggAutopot.Size = new System.Drawing.Size(300, 274);
             this.tabPageYggAutopot.TabIndex = 3;
             this.tabPageYggAutopot.Text = "Yggdrasil";
             this.tabPageYggAutopot.UseVisualStyleBackColor = true;
+            // 
+            // tabPageAutoTeleport
+            // 
+            this.tabPageAutoTeleport.Location = new System.Drawing.Point(4, 22);
+            this.tabPageAutoTeleport.Name = "tabPageAutoTeleport";
+            this.tabPageAutoTeleport.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPageAutoTeleport.Size = new System.Drawing.Size(300, 274);
+            this.tabPageAutoTeleport.TabIndex = 4;
+            this.tabPageAutoTeleport.Text = "Auto Teleport";
+            this.tabPageAutoTeleport.UseVisualStyleBackColor = true;
+            // 
+            // tabPageAutoItemBuff
+            // 
+            this.tabPageAutoItemBuff.Location = new System.Drawing.Point(4, 22);
+            this.tabPageAutoItemBuff.Name = "tabPageAutoItemBuff";
+            this.tabPageAutoItemBuff.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPageAutoItemBuff.Size = new System.Drawing.Size(300, 274);
+            this.tabPageAutoItemBuff.TabIndex = 5;
+            this.tabPageAutoItemBuff.Text = "Auto Item Buff";
+            this.tabPageAutoItemBuff.UseVisualStyleBackColor = true;
             // 
             // tabPageServer
             // 
@@ -321,9 +346,10 @@ namespace _4RTools.Forms
             this.atkDefMode.Controls.Add(this.tabMacroSwitch);
             this.atkDefMode.Controls.Add(this.tabPageMacroSongs);
             this.atkDefMode.Controls.Add(this.atkDef);
+            this.atkDefMode.Controls.Add(this.tabPageRemoteEndpoints);
             this.atkDefMode.Controls.Add(this.tabPageProfiles);
             this.atkDefMode.Controls.Add(this.tabPageServer);
-            this.atkDefMode.Location = new System.Drawing.Point(15, 274);
+            this.atkDefMode.Location = new System.Drawing.Point(15, 409);
             this.atkDefMode.Name = "atkDefMode";
             this.atkDefMode.SelectedIndex = 0;
             this.atkDefMode.Size = new System.Drawing.Size(571, 300);
@@ -339,6 +365,16 @@ namespace _4RTools.Forms
             this.tabDebuffRecovery.TabIndex = 2;
             this.tabDebuffRecovery.Text = "Debuff";
             this.tabDebuffRecovery.UseVisualStyleBackColor = true;
+            // 
+            // tabPageRemoteEndpoints
+            // 
+            this.tabPageRemoteEndpoints.Location = new System.Drawing.Point(4, 22);
+            this.tabPageRemoteEndpoints.Name = "tabPageRemoteEndpoints";
+            this.tabPageRemoteEndpoints.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPageRemoteEndpoints.Size = new System.Drawing.Size(865, 274);
+            this.tabPageRemoteEndpoints.TabIndex = 10;
+            this.tabPageRemoteEndpoints.Text = "Remote Endpoints";
+            this.tabPageRemoteEndpoints.UseVisualStyleBackColor = true;
             // 
             // characterName
             // 
@@ -373,7 +409,7 @@ namespace _4RTools.Forms
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.White;
-            this.ClientSize = new System.Drawing.Size(609, 624);
+            this.ClientSize = new System.Drawing.Size(609, 759);
             this.Controls.Add(this.OnOffPanel);
             this.Controls.Add(this.characterName);
             this.Controls.Add(this.lblCharacterName);
@@ -422,6 +458,8 @@ namespace _4RTools.Forms
         private TabControl tabControlAutopot;
         private TabPage tabPageAutopot;
         private TabPage tabPageYggAutopot;
+        private TabPage tabPageAutoTeleport;
+        private TabPage tabPageAutoItemBuff;
         private ImageList TabControlImageList;
         private TabPage tabPageServer;
         private TabPage tabPageProfiles;
@@ -435,6 +473,7 @@ namespace _4RTools.Forms
         private Label characterName;
         private Label lblCharacterName;
         private TabPage tabDebuffRecovery;
+        private TabPage tabPageRemoteEndpoints;
         private Panel OnOffPanel;
         private TabPage tabSkillTimer;
         private Label lbPowered;

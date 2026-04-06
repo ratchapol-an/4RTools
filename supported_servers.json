@@ -1,5 +1,14 @@
 [
   {
+    "index": 0,
+    "name": "Ragexe",
+    "description": null,
+    "hpAddress": "0146F28C",
+    "nameAddress": "01471CD8",
+    "hpAddressPointer": 21426828,
+    "nameAddressPointer": 21437656
+  },
+  {
     "name": "rtales.bin",
     "description": "Ragna Tales",
     "hpAddress": "0x00E8E434",

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Diagnostics;
@@ -28,6 +28,8 @@ namespace _4RTools.Forms
             SetToggleApplicationStateWindow();
             SetAutopotWindow();
             SetAutopotYggWindow();
+            SetAutoTeleportWindow();
+            SetAutoItemBuffWindow();
             SetSkillTimerWindow();
             SetProfileWindow();
             SetAHKWindow();
@@ -37,6 +39,7 @@ namespace _4RTools.Forms
             SetSongMacroWindow();
             SetATKDEFWindow();
             SetMacroSwitchWindow();
+            SetRemoteEndpointsWindow();
             SetServerWindow();
 
             TrackerSingleton.Instance().SendEvent("desktop_login", "page_view", "desktop_container_load");
@@ -225,6 +228,22 @@ namespace _4RTools.Forms
             frm.Show();
             addform(this.tabPageYggAutopot, frm);
         }
+        public void SetAutoTeleportWindow()
+        {
+            AutoTeleportForm frm = new AutoTeleportForm(subject);
+            frm.FormBorderStyle = FormBorderStyle.None;
+            frm.MdiParent = this;
+            frm.Show();
+            addform(this.tabPageAutoTeleport, frm);
+        }
+        public void SetAutoItemBuffWindow()
+        {
+            AutoItemBuffForm frm = new AutoItemBuffForm(subject);
+            frm.FormBorderStyle = FormBorderStyle.None;
+            frm.MdiParent = this;
+            frm.Show();
+            addform(this.tabPageAutoItemBuff, frm);
+        }
 
         public void SetSkillTimerWindow()
         {
@@ -253,6 +272,16 @@ namespace _4RTools.Forms
             frm.MdiParent = this;
             frm.Show();
             addform(this.tabPageServer, frm);
+        }
+
+        public void SetRemoteEndpointsWindow()
+        {
+            RemoteEndpointsForm frm = new RemoteEndpointsForm(subject);
+            frm.FormBorderStyle = FormBorderStyle.None;
+            frm.Location = new Point(0, 65);
+            frm.MdiParent = this;
+            frm.Show();
+            addform(this.tabPageRemoteEndpoints, frm);
         }
 
         public void SetAHKWindow()

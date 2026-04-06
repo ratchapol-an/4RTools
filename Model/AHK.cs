@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Windows.Forms;
 using System.Threading;
@@ -40,7 +40,14 @@ namespace _4RTools.Model
         public int AhkDelay { get; set; } = 10;
         public bool mouseFlick { get; set; } = false;
         public bool noShift { get; set; } = false;
+        public bool toggleSpamMode { get; set; } = false;
         public string ahkMode { get; set; } = COMPATIBILITY;
+        [JsonIgnore]
+        private Dictionary<Key, bool> _wasDown = new Dictionary<Key, bool>();
+        [JsonIgnore]
+        private Dictionary<Key, bool> _toggleOn = new Dictionary<Key, bool>();
+        [JsonIgnore]
+        private Dictionary<Key, DateTime> _nextTrigger = new Dictionary<Key, DateTime>();
 
         public AHK()
         {
@@ -51,6 +58,7 @@ namespace _4RTools.Model
             Client roClient = ClientSingleton.GetClient();
             if (roClient != null)
             {
+                ResetToggleRuntimeState();
                 if (thread != null) {
                     _4RThread.Stop(this.thread);
                 }
@@ -69,12 +77,28 @@ namespace _4RTools.Model
                     Keys thisk = (Keys)Enum.Parse(typeof(Keys), config.key.ToString());
                     if (!Keyboard.IsKeyDown(Key.LeftAlt) && !Keyboard.IsKeyDown(Key.RightAlt))
                     {
-                        if (config.ClickActive && Keyboard.IsKeyDown(config.key))
+                        if (toggleSpamMode)
+                        {
+                            if (IsToggleTurnedOn(config.key) && CanTrigger(config.key))
+                            {
+                                if (config.ClickActive)
+                                {
+                                    if (noShift) keybd_event(Constants.VK_SHIFT, 0x45, Constants.KEYEVENTF_EXTENDEDKEY, 0);
+                                    _AHKCompatibilitySingleAction(roClient, thisk);
+                                    if (noShift) keybd_event(Constants.VK_SHIFT, 0x45, Constants.KEYEVENTF_EXTENDEDKEY | Constants.KEYEVENTF_KEYUP, 0);
+                                }
+                                else
+                                {
+                                    _AHKNoClickSingleAction(roClient, thisk);
+                                }
+                                SetNextTrigger(config.key);
+                            }
+                        }
+                        else if (config.ClickActive && Keyboard.IsKeyDown(config.key))
                         {
                             if (noShift) keybd_event(Constants.VK_SHIFT, 0x45, Constants.KEYEVENTF_EXTENDEDKEY, 0);
                             _AHKCompatibility(roClient, config, thisk);
                             if (noShift) keybd_event(Constants.VK_SHIFT, 0x45, Constants.KEYEVENTF_EXTENDEDKEY | Constants.KEYEVENTF_KEYUP, 0);
-
                         }
                         else
                         {
@@ -88,7 +112,18 @@ namespace _4RTools.Model
                 foreach (KeyConfig config in AhkEntries.Values)
                 {
                     Keys thisk = (Keys)Enum.Parse(typeof(Keys), config.key.ToString());
-                    this._AHKSpeedBoost(roClient, config, thisk);
+                    if (toggleSpamMode)
+                    {
+                        if (IsToggleTurnedOn(config.key) && CanTrigger(config.key))
+                        {
+                            this._AHKSpeedBoostSingleAction(roClient, thisk);
+                            SetNextTrigger(config.key);
+                        }
+                    }
+                    else
+                    {
+                        this._AHKSpeedBoost(roClient, config, thisk);
+                    }
                 }
             }
 
@@ -129,6 +164,14 @@ namespace _4RTools.Model
             }
         }
 
+        private void _AHKCompatibilitySingleAction(Client roClient, Keys thisk)
+        {
+            Interop.PostMessage(roClient.process.MainWindowHandle, Constants.WM_KEYDOWN_MSG_ID, thisk, 0);
+            Interop.PostMessage(roClient.process.MainWindowHandle, Constants.WM_LBUTTONDOWN, 0, 0);
+            Thread.Sleep(1);
+            Interop.PostMessage(roClient.process.MainWindowHandle, Constants.WM_LBUTTONUP, 0, 0);
+        }
+
         private void _AHKSpeedBoost(Client roClient, KeyConfig config, Keys thisk)
         {
             while (Keyboard.IsKeyDown(config.key))
@@ -142,6 +185,15 @@ namespace _4RTools.Model
             }
         }
 
+        private void _AHKSpeedBoostSingleAction(Client roClient, Keys thisk)
+        {
+            Point cursorPos = System.Windows.Forms.Cursor.Position;
+            Interop.PostMessage(roClient.process.MainWindowHandle, Constants.WM_KEYDOWN_MSG_ID, thisk, 0);
+            mouse_event(Constants.MOUSEEVENTF_LEFTDOWN, (uint)cursorPos.X, (uint)cursorPos.Y, 0, 0);
+            Thread.Sleep(1);
+            mouse_event(Constants.MOUSEEVENTF_LEFTUP, (uint)cursorPos.X, (uint)cursorPos.Y, 0, 0);
+        }
+
         private void _AHKNoClick(Client roClient, KeyConfig config, Keys thisk)
         {
             while (Keyboard.IsKeyDown(config.key))
@@ -149,6 +201,52 @@ namespace _4RTools.Model
                 Interop.PostMessage(roClient.process.MainWindowHandle, Constants.WM_KEYDOWN_MSG_ID, thisk, 0);
                 Thread.Sleep(this.AhkDelay);
             }
+        }
+
+        private void _AHKNoClickSingleAction(Client roClient, Keys thisk)
+        {
+            Interop.PostMessage(roClient.process.MainWindowHandle, Constants.WM_KEYDOWN_MSG_ID, thisk, 0);
+        }
+
+        private bool IsToggleTurnedOn(Key key)
+        {
+            bool isDown = Keyboard.IsKeyDown(key);
+            bool wasDown = _wasDown.ContainsKey(key) ? _wasDown[key] : false;
+            bool toggleState = _toggleOn.ContainsKey(key) ? _toggleOn[key] : false;
+
+            if (isDown && !wasDown)
+            {
+                toggleState = !toggleState;
+                _toggleOn[key] = toggleState;
+            }
+
+            _wasDown[key] = isDown;
+            return toggleState;
+        }
+
+        private bool CanTrigger(Key key)
+        {
+            DateTime now = DateTime.UtcNow;
+            if (!_nextTrigger.ContainsKey(key))
+            {
+                _nextTrigger[key] = now;
+                return true;
+            }
+
+            return now >= _nextTrigger[key];
+        }
+
+        private void SetNextTrigger(Key key)
+        {
+            int delayMs = AhkDelay < 1 ? 1 : AhkDelay;
+            _nextTrigger[key] = DateTime.UtcNow.AddMilliseconds(delayMs);
+        }
+
+        private void ResetToggleRuntimeState()
+        {
+            _wasDown.Clear();
+            _toggleOn.Clear();
+            _nextTrigger.Clear();
         }
 
         public void AddAHKEntry(string chkboxName, KeyConfig value)
@@ -170,6 +268,7 @@ namespace _4RTools.Model
         public void Stop()
         {
             _4RThread.Stop(this.thread);
+            ResetToggleRuntimeState();
         }
 
         public string GetConfiguration()

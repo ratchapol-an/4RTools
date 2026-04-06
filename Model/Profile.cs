@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using Newtonsoft.Json;
 using _4RTools.Utils;
 using _4RTools.Forms;
@@ -25,6 +25,8 @@ namespace _4RTools.Model
                     profile.AHK = JsonConvert.DeserializeObject<AHK>(Profile.GetByAction(rawObject, profile.AHK));
                     profile.Autopot = JsonConvert.DeserializeObject<Autopot>(Profile.GetByAction(rawObject, profile.Autopot));
                     profile.AutopotYgg = JsonConvert.DeserializeObject<Autopot>(Profile.GetByAction(rawObject, profile.AutopotYgg));
+                    profile.AutoTeleport = JsonConvert.DeserializeObject<AutoTeleport>(Profile.GetByAction(rawObject, profile.AutoTeleport));
+                    profile.AutoItemBuff = JsonConvert.DeserializeObject<AutoItemBuff>(Profile.GetByAction(rawObject, profile.AutoItemBuff));
                     profile.StatusRecovery = JsonConvert.DeserializeObject<StatusRecovery>(Profile.GetByAction(rawObject, profile.StatusRecovery));
                     profile.AutoRefreshSpammer1 = JsonConvert.DeserializeObject<AutoRefreshSpammer>(Profile.GetByAction(rawObject, profile.AutoRefreshSpammer1));
                     profile.AutoRefreshSpammer2 = JsonConvert.DeserializeObject<AutoRefreshSpammer>(Profile.GetByAction(rawObject, profile.AutoRefreshSpammer2));
@@ -115,6 +117,8 @@ namespace _4RTools.Model
         public AHK AHK { get; set; }
         public Autopot Autopot { get; set; }
         public Autopot AutopotYgg { get; set; }
+        public AutoTeleport AutoTeleport { get; set; }
+        public AutoItemBuff AutoItemBuff { get; set; }
         public AutoRefreshSpammer AutoRefreshSpammer1 { get; set; }
         public AutoRefreshSpammer AutoRefreshSpammer2 { get; set; }
         public AutoRefreshSpammer AutoRefreshSpammer3 { get; set; }
@@ -134,6 +138,8 @@ namespace _4RTools.Model
             this.AHK = new AHK();
             this.Autopot = new Autopot(Autopot.ACTION_NAME_AUTOPOT);
             this.AutopotYgg = new Autopot(Autopot.ACTION_NAME_AUTOPOT_YGG);
+            this.AutoTeleport = new AutoTeleport();
+            this.AutoItemBuff = new AutoItemBuff();
             this.AutoRefreshSpammer1 = new AutoRefreshSpammer(actionName: "AutoRefreshSpammer01");
             this.AutoRefreshSpammer2 = new AutoRefreshSpammer(actionName: "AutoRefreshSpammer02");
             this.AutoRefreshSpammer3 = new AutoRefreshSpammer(actionName: "AutoRefreshSpammer03");
