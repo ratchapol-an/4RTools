@@ -26,6 +26,8 @@ public sealed partial class MainWindow : Window
     private readonly PartyBuffScheduler _scheduler = new();
     private readonly List<RagnarokProcessInfo> _availableProcesses = new();
     private readonly List<TriggerDefinition> _triggers = new();
+    private readonly Queue<DispatchPlan> _triggerQueue = new();
+    private readonly object _triggerQueueLock = new();
     private readonly List<SupportedServerEntry> _supportedServers = new();
     private TriggerDefinition? _selectedTrigger;
     private CancellationTokenSource? _runCts;
@@ -685,6 +687,10 @@ public sealed partial class MainWindow : Window
         }
 
         _scheduler.Reset();
+        lock (_triggerQueueLock)
+        {
+            _triggerQueue.Clear();
+        }
         _runCts = new CancellationTokenSource();
         _startButton.IsEnabled = false;
         _stopButton.IsEnabled = true;
@@ -842,24 +848,92 @@ public sealed partial class MainWindow : Window
             }
 
             IReadOnlyList<DispatchPlan> plans = _scheduler.BuildPlans(config, DateTimeOffset.UtcNow);
-            foreach (DispatchPlan plan in plans)
+            EnqueuePlans(plans);
+            if (TryDequeuePlan(out DispatchPlan plan))
             {
-                AppendLog($"Trigger fired: {plan.TriggerName}");
-                foreach (DispatchAction action in plan.Actions)
-                {
-                    bool sent = _keyDispatchService.SendKey(action.ProcessId, action.Key);
-                    AppendLog(sent
-                        ? $"Key {action.Key} -> {action.ProcessId} ({action.Reason})"
-                        : $"Failed {action.Key} -> {action.ProcessId} ({action.Reason})");
-
-                    if (action.DelayAfterMs > 0)
-                    {
-                        await Task.Delay(action.DelayAfterMs, ct);
-                    }
-                }
+                await ExecutePlanAsync(plan, ct);
             }
 
             await Task.Delay(120, ct);
+        }
+    }
+
+    private void EnqueuePlans(IEnumerable<DispatchPlan> plans)
+    {
+        lock (_triggerQueueLock)
+        {
+            foreach (DispatchPlan plan in plans)
+            {
+                _triggerQueue.Enqueue(plan);
+            }
+        }
+    }
+
+    private bool TryDequeuePlan(out DispatchPlan plan)
+    {
+        lock (_triggerQueueLock)
+        {
+            if (_triggerQueue.Count > 0)
+            {
+                plan = _triggerQueue.Dequeue();
+                return true;
+            }
+        }
+
+        plan = null!;
+        return false;
+    }
+
+    private async Task ExecutePlanAsync(DispatchPlan plan, CancellationToken ct)
+    {
+        AppendLog($"Trigger fired: {plan.TriggerName}");
+
+        // Execute Archbishop teleport first (if present), then run members in parallel.
+        DispatchAction? teleportAction = plan.Actions.FirstOrDefault(a => a.Reason.EndsWith(":Teleport", StringComparison.OrdinalIgnoreCase));
+        if (teleportAction is not null)
+        {
+            bool sent = _keyDispatchService.SendKey(teleportAction.ProcessId, teleportAction.Key);
+            AppendLog(sent
+                ? $"Key {teleportAction.Key} -> {teleportAction.ProcessId} ({teleportAction.Reason})"
+                : $"Failed {teleportAction.Key} -> {teleportAction.ProcessId} ({teleportAction.Reason})");
+
+            if (teleportAction.DelayAfterMs > 0)
+            {
+                await Task.Delay(teleportAction.DelayAfterMs, ct);
+            }
+        }
+
+        var memberSequences = plan.Actions
+            .Where(a => !a.Reason.EndsWith(":Teleport", StringComparison.OrdinalIgnoreCase))
+            .GroupBy(a => (a.ProcessId, a.Reason))
+            .Select(g => g.ToList())
+            .ToList();
+
+        if (memberSequences.Count == 0)
+        {
+            return;
+        }
+
+        List<Task> memberTasks = memberSequences
+            .Select(sequence => RunMemberSequenceAsync(sequence, ct))
+            .ToList();
+
+        await Task.WhenAll(memberTasks);
+    }
+
+    private async Task RunMemberSequenceAsync(IReadOnlyList<DispatchAction> sequence, CancellationToken ct)
+    {
+        foreach (DispatchAction action in sequence)
+        {
+            bool sent = _keyDispatchService.SendKey(action.ProcessId, action.Key);
+            AppendLog(sent
+                ? $"Key {action.Key} -> {action.ProcessId} ({action.Reason})"
+                : $"Failed {action.Key} -> {action.ProcessId} ({action.Reason})");
+
+            if (action.DelayAfterMs > 0)
+            {
+                await Task.Delay(action.DelayAfterMs, ct);
+            }
         }
     }
 
