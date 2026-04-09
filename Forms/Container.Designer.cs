@@ -51,6 +51,7 @@ namespace _4RTools.Forms
             this.tabPageYggAutopot = new System.Windows.Forms.TabPage();
             this.tabPageAutoTeleport = new System.Windows.Forms.TabPage();
             this.tabPageAutoItemBuff = new System.Windows.Forms.TabPage();
+            this.tabPageNovaFoodBuff = new System.Windows.Forms.TabPage();
             this.tabPageServer = new System.Windows.Forms.TabPage();
             this.tabPageProfiles = new System.Windows.Forms.TabPage();
             this.tabMacroSwitch = new System.Windows.Forms.TabPage();
@@ -185,7 +186,7 @@ namespace _4RTools.Forms
             // panel5
             // 
             this.panel5.BackColor = System.Drawing.Color.Silver;
-            this.panel5.Location = new System.Drawing.Point(344, 83);
+            this.panel5.Location = new System.Drawing.Point(448, 83);
             this.panel5.Name = "panel5";
             this.panel5.Size = new System.Drawing.Size(1, 165);
             this.panel5.TabIndex = 18;
@@ -196,11 +197,12 @@ namespace _4RTools.Forms
             this.tabControlAutopot.Controls.Add(this.tabPageYggAutopot);
             this.tabControlAutopot.Controls.Add(this.tabPageAutoTeleport);
             this.tabControlAutopot.Controls.Add(this.tabPageAutoItemBuff);
+            this.tabControlAutopot.Controls.Add(this.tabPageNovaFoodBuff);
             this.tabControlAutopot.ImageList = this.TabControlImageList;
             this.tabControlAutopot.Location = new System.Drawing.Point(15, 83);
             this.tabControlAutopot.Name = "tabControlAutopot";
             this.tabControlAutopot.SelectedIndex = 0;
-            this.tabControlAutopot.Size = new System.Drawing.Size(308, 300);
+            this.tabControlAutopot.Size = new System.Drawing.Size(420, 300);
             this.tabControlAutopot.TabIndex = 25;
             // 
             // tabPageAutopot
@@ -242,6 +244,16 @@ namespace _4RTools.Forms
             this.tabPageAutoItemBuff.TabIndex = 5;
             this.tabPageAutoItemBuff.Text = "Auto Item Buff";
             this.tabPageAutoItemBuff.UseVisualStyleBackColor = true;
+            // 
+            // tabPageNovaFoodBuff
+            // 
+            this.tabPageNovaFoodBuff.Location = new System.Drawing.Point(4, 22);
+            this.tabPageNovaFoodBuff.Name = "tabPageNovaFoodBuff";
+            this.tabPageNovaFoodBuff.Padding = new System.Windows.Forms.Padding(3);
+            this.tabPageNovaFoodBuff.Size = new System.Drawing.Size(412, 274);
+            this.tabPageNovaFoodBuff.TabIndex = 6;
+            this.tabPageNovaFoodBuff.Text = "Nova Food Buff";
+            this.tabPageNovaFoodBuff.UseVisualStyleBackColor = true;
             // 
             // tabPageServer
             // 
@@ -352,7 +364,7 @@ namespace _4RTools.Forms
             this.atkDefMode.Location = new System.Drawing.Point(15, 409);
             this.atkDefMode.Name = "atkDefMode";
             this.atkDefMode.SelectedIndex = 0;
-            this.atkDefMode.Size = new System.Drawing.Size(571, 300);
+            this.atkDefMode.Size = new System.Drawing.Size(873, 300);
             this.atkDefMode.TabIndex = 4;
             // 
             // tabDebuffRecovery
@@ -381,7 +393,7 @@ namespace _4RTools.Forms
             this.characterName.AutoSize = true;
             this.characterName.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
             this.characterName.ForeColor = System.Drawing.Color.DarkGreen;
-            this.characterName.Location = new System.Drawing.Point(366, 215);
+            this.characterName.Location = new System.Drawing.Point(470, 215);
             this.characterName.Name = "characterName";
             this.characterName.Size = new System.Drawing.Size(25, 17);
             this.characterName.TabIndex = 28;
@@ -391,7 +403,7 @@ namespace _4RTools.Forms
             // 
             this.lblCharacterName.AutoSize = true;
             this.lblCharacterName.Font = new System.Drawing.Font("Microsoft Sans Serif", 10F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.lblCharacterName.Location = new System.Drawing.Point(366, 198);
+            this.lblCharacterName.Location = new System.Drawing.Point(470, 198);
             this.lblCharacterName.Name = "lblCharacterName";
             this.lblCharacterName.Size = new System.Drawing.Size(115, 17);
             this.lblCharacterName.TabIndex = 27;
@@ -399,7 +411,7 @@ namespace _4RTools.Forms
             // 
             // OnOffPanel
             // 
-            this.OnOffPanel.Location = new System.Drawing.Point(363, 83);
+            this.OnOffPanel.Location = new System.Drawing.Point(470, 83);
             this.OnOffPanel.Name = "OnOffPanel";
             this.OnOffPanel.Size = new System.Drawing.Size(223, 112);
             this.OnOffPanel.TabIndex = 29;
@@ -409,7 +421,7 @@ namespace _4RTools.Forms
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.White;
-            this.ClientSize = new System.Drawing.Size(609, 759);
+            this.ClientSize = new System.Drawing.Size(900, 759);
             this.Controls.Add(this.OnOffPanel);
             this.Controls.Add(this.characterName);
             this.Controls.Add(this.lblCharacterName);
@@ -460,6 +472,7 @@ namespace _4RTools.Forms
         private TabPage tabPageYggAutopot;
         private TabPage tabPageAutoTeleport;
         private TabPage tabPageAutoItemBuff;
+        private TabPage tabPageNovaFoodBuff;
         private ImageList TabControlImageList;
         private TabPage tabPageServer;
         private TabPage tabPageProfiles;

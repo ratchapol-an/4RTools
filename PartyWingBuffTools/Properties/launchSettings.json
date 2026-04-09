@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "PartyWingBuffTools (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "PartyWingBuffTools (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

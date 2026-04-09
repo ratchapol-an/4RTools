@@ -351,6 +351,7 @@
     <Compile Include="Model\Autopot.cs" />
     <Compile Include="Model\AutoTeleport.cs" />
     <Compile Include="Model\AutoItemBuff.cs" />
+    <Compile Include="Model\NovaFoodBuff.cs" />
     <Compile Include="Model\Autobuff.cs" />
     <Compile Include="Model\AutoRefreshSpammer.cs" />
     <Compile Include="Model\Buff.cs" />
@@ -372,6 +373,9 @@
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\AutoItemBuffForm.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\NovaFoodBuffForm.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="Forms\AutopotForm.Designer.cs">
@@ -398,6 +402,7 @@
     <Compile Include="Utils\AppConfig.cs" />
     <Compile Include="Utils\Constants.cs" />
     <Compile Include="Utils\FormUtils.cs" />
+    <Compile Include="Utils\InputCoordinator.cs" />
     <Compile Include="Utils\Interop.cs" />
     <Compile Include="Utils\KeyboardHook.cs" />
     <Compile Include="Utils\ProcessMemoryReader.cs" />

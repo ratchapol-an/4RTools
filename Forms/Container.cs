@@ -30,6 +30,7 @@ namespace _4RTools.Forms
             SetAutopotYggWindow();
             SetAutoTeleportWindow();
             SetAutoItemBuffWindow();
+            SetNovaFoodBuffWindow();
             SetSkillTimerWindow();
             SetProfileWindow();
             SetAHKWindow();
@@ -243,6 +244,15 @@ namespace _4RTools.Forms
             frm.MdiParent = this;
             frm.Show();
             addform(this.tabPageAutoItemBuff, frm);
+        }
+
+        public void SetNovaFoodBuffWindow()
+        {
+            NovaFoodBuffForm frm = new NovaFoodBuffForm(subject);
+            frm.FormBorderStyle = FormBorderStyle.None;
+            frm.MdiParent = this;
+            frm.Show();
+            addform(this.tabPageNovaFoodBuff, frm);
         }
 
         public void SetSkillTimerWindow()

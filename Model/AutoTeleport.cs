@@ -91,8 +91,11 @@ namespace _4RTools.Model
             }
 
             IntPtr target = ClientSingleton.GetClient().process.MainWindowHandle;
-            Interop.PostMessage(target, Constants.WM_KEYDOWN_MSG_ID, key, 0);
-            Interop.PostMessage(target, Constants.WM_KEYUP_MSG_ID, key, 0);
+            bool keySent = InputCoordinator.TrySendHighPriorityKey(target, key);
+            if (!keySent)
+            {
+                return;
+            }
 
             int hpPct = maxHp == 0 ? 0 : (int)((currentHp * 100) / maxHp);
             string logLine = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] Teleport triggered. HP={currentHp}/{maxHp} ({hpPct}%), threshold={hpPercent}%, cooldown={GetSafeCooldown()}ms.";
