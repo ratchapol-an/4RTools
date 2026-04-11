@@ -396,3 +396,6 @@ FodyWeavers.xsd
 
 # JetBrains Rider
 *.sln.iml
+
+# PartyWingBuffTools portable zip / staging (build-and-zip.ps1)
+PartyWingBuffTools/dist/

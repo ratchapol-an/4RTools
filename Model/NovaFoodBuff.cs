@@ -15,6 +15,7 @@ namespace _4RTools.Model
 
         public Key manualBookItemKey { get; set; } = Key.D8;
         public int checkIntervalMs { get; set; } = 800;
+        public int stepDelayMs { get; set; } = 350;
         public bool isEnabled { get; set; } = false;
 
         private _4RThread thread;
@@ -65,7 +66,7 @@ namespace _4RTools.Model
 
             Log("Buff 273 is inactive, trying Nova Food sequence.");
             ExecuteNovaFoodSequence();
-            Thread.Sleep(650);
+            Thread.Sleep(Math.Max(0, stepDelayMs + 300));
 
             if (!HasNovaFoodBuff(client))
             {
@@ -105,18 +106,19 @@ namespace _4RTools.Model
 
             try
             {
+                int delay = Math.Max(0, stepDelayMs);
                 SendKey(manualBookItemKey);
-                Thread.Sleep(350);
+                Thread.Sleep(delay);
                 SendKey(Key.Enter);
-                Thread.Sleep(350);
+                Thread.Sleep(delay);
                 SendKey(Key.Enter);
-                Thread.Sleep(350);
+                Thread.Sleep(delay);
                 SendKey(Key.Down);
-                Thread.Sleep(350);
+                Thread.Sleep(delay);
                 SendKey(Key.Enter);
-                Thread.Sleep(350);
+                Thread.Sleep(delay);
                 SendKey(Key.Enter);
-                Thread.Sleep(350);
+                Thread.Sleep(delay);
                 SendKey(Key.Enter);
             }
             finally

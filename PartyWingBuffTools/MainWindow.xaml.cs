@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -20,6 +21,7 @@ public sealed partial class MainWindow : Window
     private const string DefaultHpAddressHex = "0146F28C";
     private const string DefaultNameAddressHex = "01471CD8";
     private const string DefaultProfileName = "Default";
+    private const int MaxDisplayedLogLines = 50;
 
     private readonly RagnarokProcessService _processService = new();
     private readonly KeyDispatchService _keyDispatchService = new();
@@ -33,6 +35,13 @@ public sealed partial class MainWindow : Window
     private CancellationTokenSource? _runCts;
     private int? _pendingArchbishopProcessId;
     private string _currentProfileName = DefaultProfileName;
+    private readonly Queue<string> _recentLogLines = new();
+    private readonly object _logFileLock = new();
+    private readonly Queue<string> _pendingFileLogLines = new();
+    private readonly object _pendingFileLogLock = new();
+    private readonly SemaphoreSlim _logSignal = new(0);
+    private readonly CancellationTokenSource _logWriterCts = new();
+    private Task? _logWriterTask;
 
     private ComboBox _archbishopProcessComboBox = null!;
     private TextBlock _archbishopCharacterText = null!;
@@ -66,7 +75,12 @@ public sealed partial class MainWindow : Window
         LoadProfile(_currentProfileName, logResult: false);
         LoadSupportedProcessNames();
         RefreshProcesses();
-        Closed += (_, _) => SaveProfile(_currentProfileName, logResult: false);
+        _logWriterTask = Task.Run(() => RunLogWriterAsync(_logWriterCts.Token));
+        Closed += (_, _) =>
+        {
+            SaveProfile(_currentProfileName, logResult: false);
+            StopLogWriter();
+        };
     }
 
     private void BuildUi()
@@ -197,8 +211,8 @@ public sealed partial class MainWindow : Window
     {
         var runGrid = new Grid { ColumnSpacing = 12, RowSpacing = 10 };
         runGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        runGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(180) });
-        runGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(260) });
+        runGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        runGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         runGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.4, GridUnitType.Star) });
         runGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -259,6 +273,14 @@ public sealed partial class MainWindow : Window
     {
         var logs = new StackPanel { Spacing = 8 };
         logs.Children.Add(new TextBlock { Text = "📝 Runtime Logs", FontWeight = FontWeights.Bold, FontSize = 16 });
+        var actions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var clearButton = new Button { Content = "Clear Log" };
+        clearButton.Click += (_, _) => ClearLogs();
+        var openFolderButton = new Button { Content = "Open Logs Folder" };
+        openFolderButton.Click += (_, _) => OpenLogsFolder();
+        actions.Children.Add(clearButton);
+        actions.Children.Add(openFolderButton);
+        logs.Children.Add(actions);
         _logTextBox = new TextBox { AcceptsReturn = true, IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MinHeight = 420 };
         ScrollViewer.SetVerticalScrollBarVisibility(_logTextBox, ScrollBarVisibility.Auto);
         logs.Children.Add(_logTextBox);
@@ -386,7 +408,7 @@ public sealed partial class MainWindow : Window
         wrapper.Children.Add(header);
 
         _memberRowsHost = new StackPanel { Spacing = 6 };
-        var scroll = new ScrollViewer { Content = _memberRowsHost, Height = 180 };
+        var scroll = new ScrollViewer { Content = _memberRowsHost };
         Grid.SetRow(scroll, 2);
         wrapper.Children.Add(scroll);
         return wrapper;
@@ -1010,8 +1032,148 @@ public sealed partial class MainWindow : Window
     private void AppendLog(string message)
     {
         string line = $"[{DateTime.Now:HH:mm:ss}] {message}";
-        _logTextBox.Text += line + Environment.NewLine;
+
+        EnqueueLogLineForFile(line);
+        _recentLogLines.Enqueue(line);
+        while (_recentLogLines.Count > MaxDisplayedLogLines)
+        {
+            _recentLogLines.Dequeue();
+        }
+
+        _logTextBox.Text = string.Join(Environment.NewLine, _recentLogLines) + Environment.NewLine;
         _logTextBox.SelectionStart = _logTextBox.Text.Length;
+    }
+
+    private void ClearLogs()
+    {
+        _recentLogLines.Clear();
+        _logTextBox.Text = string.Empty;
+        try
+        {
+            string logPath = GetTodayLogFilePath();
+            if (File.Exists(logPath))
+            {
+                File.WriteAllText(logPath, string.Empty);
+            }
+
+            AppendLog("Log cleared.");
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Failed to clear log file: {ex.Message}");
+        }
+    }
+
+    private void OpenLogsFolder()
+    {
+        try
+        {
+            string path = GetLogDirectoryPath();
+            Directory.CreateDirectory(path);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = path,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Failed to open logs folder: {ex.Message}");
+        }
+    }
+
+    private void WriteLogLineToFile(string line)
+    {
+        try
+        {
+            Directory.CreateDirectory(GetLogDirectoryPath());
+            lock (_logFileLock)
+            {
+                File.AppendAllText(GetTodayLogFilePath(), line + Environment.NewLine);
+            }
+        }
+        catch
+        {
+            // keep app responsive even if file logging fails
+        }
+    }
+
+    private void EnqueueLogLineForFile(string line)
+    {
+        lock (_pendingFileLogLock)
+        {
+            _pendingFileLogLines.Enqueue(line);
+        }
+
+        _logSignal.Release();
+    }
+
+    private async Task RunLogWriterAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                await _logSignal.WaitAsync(ct);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+
+            List<string> batch = new();
+            lock (_pendingFileLogLock)
+            {
+                while (_pendingFileLogLines.Count > 0)
+                {
+                    batch.Add(_pendingFileLogLines.Dequeue());
+                }
+            }
+
+            foreach (string line in batch)
+            {
+                WriteLogLineToFile(line);
+            }
+        }
+
+        // Flush remaining log lines before shutdown.
+        List<string> remaining = new();
+        lock (_pendingFileLogLock)
+        {
+            while (_pendingFileLogLines.Count > 0)
+            {
+                remaining.Add(_pendingFileLogLines.Dequeue());
+            }
+        }
+
+        foreach (string line in remaining)
+        {
+            WriteLogLineToFile(line);
+        }
+    }
+
+    private void StopLogWriter()
+    {
+        try
+        {
+            _logWriterCts.Cancel();
+            _logSignal.Release();
+            _logWriterTask?.Wait(1200);
+        }
+        catch
+        {
+            // no-op during app shutdown
+        }
+    }
+
+    private string GetTodayLogFilePath()
+    {
+        return Path.Combine(GetLogDirectoryPath(), $"{DateTime.Now:yyyy-MM-dd}.log");
+    }
+
+    private string GetLogDirectoryPath()
+    {
+        return Path.Combine(GetAppDataRootPath(), "logs");
     }
 
     private void LoadSupportedProcessNames()
@@ -1131,7 +1293,20 @@ public sealed partial class MainWindow : Window
 
     private string GetProfileDirectoryPath()
     {
+        return Path.Combine(GetAppDataRootPath(), "profiles");
+    }
+
+    private string GetLegacyProfileDirectoryPath()
+    {
         return Path.Combine(AppContext.BaseDirectory, "Profiles");
+    }
+
+    private string GetAppDataRootPath()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "4RTools",
+            "PartyWingBuffTools");
     }
 
     private string GetProfileFilePath(string profileName)
@@ -1163,11 +1338,46 @@ public sealed partial class MainWindow : Window
 
     private void EnsureDefaultProfileExists()
     {
+        TryMigrateLegacyProfiles();
         Directory.CreateDirectory(GetProfileDirectoryPath());
         string filePath = GetProfileFilePath(DefaultProfileName);
         if (!File.Exists(filePath))
         {
             SaveProfile(DefaultProfileName, logResult: false);
+        }
+    }
+
+    private void TryMigrateLegacyProfiles()
+    {
+        string sourceDir = GetLegacyProfileDirectoryPath();
+        string targetDir = GetProfileDirectoryPath();
+
+        try
+        {
+            if (!Directory.Exists(sourceDir))
+            {
+                return;
+            }
+
+            Directory.CreateDirectory(targetDir);
+            foreach (string sourceFile in Directory.GetFiles(sourceDir, "*.json"))
+            {
+                string fileName = Path.GetFileName(sourceFile);
+                if (string.IsNullOrWhiteSpace(fileName))
+                {
+                    continue;
+                }
+
+                string targetFile = Path.Combine(targetDir, fileName);
+                if (!File.Exists(targetFile))
+                {
+                    File.Copy(sourceFile, targetFile);
+                }
+            }
+        }
+        catch
+        {
+            // best-effort migration only
         }
     }
 

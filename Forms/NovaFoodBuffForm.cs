@@ -12,6 +12,7 @@ namespace _4RTools.Forms
         private readonly Button btnToggle = new Button();
         private readonly TextBox txtBookKey = new TextBox();
         private readonly NumericUpDown numCheckInterval = new NumericUpDown();
+        private readonly NumericUpDown numStepDelay = new NumericUpDown();
         private readonly Label lblStatus = new Label();
         private readonly TextBox txtLog = new TextBox();
 
@@ -52,7 +53,7 @@ namespace _4RTools.Forms
         private void InitializeComponent()
         {
             this.BackColor = Color.White;
-            this.ClientSize = new Size(300, 274);
+            this.ClientSize = new Size(320, 320);
             this.FormBorderStyle = FormBorderStyle.None;
             this.StartPosition = FormStartPosition.Manual;
             this.Text = "NovaFoodBuffForm";
@@ -76,13 +77,16 @@ namespace _4RTools.Forms
             numCheckInterval.Maximum = 5000;
             Label lblCheckMs = new Label { Text = "ms", Location = new Point(206, 86), AutoSize = true };
 
-            lblStatus.Location = new Point(16, 118);
+            int rowY = 120;
+            CreateDelayRow("Step Delay", numStepDelay, rowY); rowY += 34;
+
+            lblStatus.Location = new Point(16, rowY);
             lblStatus.AutoSize = true;
             lblStatus.Font = new Font("Microsoft Sans Serif", 9F, FontStyle.Bold);
             lblStatus.Text = "Status: waiting";
 
-            txtLog.Location = new Point(18, 145);
-            txtLog.Size = new Size(260, 119);
+            txtLog.Location = new Point(18, rowY + 24);
+            txtLog.Size = new Size(280, 140);
             txtLog.Multiline = true;
             txtLog.ReadOnly = true;
             txtLog.ScrollBars = ScrollBars.Vertical;
@@ -98,6 +102,20 @@ namespace _4RTools.Forms
             this.Controls.Add(txtLog);
         }
 
+        private void CreateDelayRow(string label, NumericUpDown input, int y)
+        {
+            Label lbl = new Label { Text = label, Location = new Point(16, y + 4), AutoSize = true };
+            input.Location = new Point(120, y);
+            input.Size = new Size(80, 23);
+            input.Font = new Font("Microsoft Sans Serif", 10F);
+            input.Minimum = 0;
+            input.Maximum = 3000;
+            Label lblMs = new Label { Text = "ms", Location = new Point(206, y + 4), AutoSize = true };
+            this.Controls.Add(lbl);
+            this.Controls.Add(input);
+            this.Controls.Add(lblMs);
+        }
+
         private void WireEvents()
         {
             btnToggle.Click += (s, e) => ToggleFeature();
@@ -105,6 +123,7 @@ namespace _4RTools.Forms
             txtBookKey.KeyPress += new KeyPressEventHandler(FormUtils.OnKeyPress);
             txtBookKey.TextChanged += OnBookKeyChanged;
             numCheckInterval.ValueChanged += OnCheckChanged;
+            numStepDelay.ValueChanged += (s, e) => UpdateDelayValuesFromControls();
         }
 
         private void SyncControlsFromProfile()
@@ -113,7 +132,15 @@ namespace _4RTools.Forms
 
             txtBookKey.Text = novaFoodBuff.manualBookItemKey.ToString();
             numCheckInterval.Value = Math.Max((int)numCheckInterval.Minimum, Math.Min((int)numCheckInterval.Maximum, novaFoodBuff.checkIntervalMs));
+            numStepDelay.Value = ClampToControl(numStepDelay, novaFoodBuff.stepDelayMs);
             UpdateToggleButton();
+        }
+
+        private decimal ClampToControl(NumericUpDown control, int value)
+        {
+            int min = (int)control.Minimum;
+            int max = (int)control.Maximum;
+            return Math.Max(min, Math.Min(max, value));
         }
 
         private void ToggleFeature()
@@ -155,6 +182,13 @@ namespace _4RTools.Forms
         {
             if (novaFoodBuff == null) return;
             novaFoodBuff.checkIntervalMs = (int)numCheckInterval.Value;
+            ProfileSingleton.SetConfiguration(novaFoodBuff);
+        }
+
+        private void UpdateDelayValuesFromControls()
+        {
+            if (novaFoodBuff == null) return;
+            novaFoodBuff.stepDelayMs = (int)numStepDelay.Value;
             ProfileSingleton.SetConfiguration(novaFoodBuff);
         }
 
