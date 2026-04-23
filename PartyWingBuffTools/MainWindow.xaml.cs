@@ -11,7 +11,9 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PartyWingBuffTools.Core.Models;
 using PartyWingBuffTools.Core.Services;
+using PartyWingBuffTools.Native;
 using PartyWingBuffTools.Services;
+using WinRT.Interop;
 
 namespace PartyWingBuffTools;
 
@@ -325,9 +327,19 @@ public sealed partial class MainWindow : Window
         actions.Children.Add(renameProfileButton);
         actions.Children.Add(deleteProfileButton);
         panel.Children.Add(actions);
+
+        var importExportRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var openProfileFolderButton = new Button { Content = "📁 Open profile folder" };
+        openProfileFolderButton.Click += (_, _) => OpenProfileFolderInExplorer();
+        var importProfilesButton = new Button { Content = "⬇ Import profiles…" };
+        importProfilesButton.Click += (_, _) => ImportProfilesFromDisk();
+        importExportRow.Children.Add(openProfileFolderButton);
+        importExportRow.Children.Add(importProfilesButton);
+        panel.Children.Add(importExportRow);
+
         panel.Children.Add(new TextBlock
         {
-            Text = "Notes: Default profile cannot be renamed/deleted. Save button on top bar saves current profile.",
+            Text = "Profiles live under %LocalAppData%\\4RTools\\PartyWingBuffTools\\profiles. Use Open folder to copy files to another PC, or Import to add .json profiles from disk (existing names are overwritten). Default cannot be renamed/deleted. Save on the top bar saves the current profile.",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.8,
         });
@@ -1291,14 +1303,10 @@ public sealed partial class MainWindow : Window
         ShowPanel("logs");
     }
 
+    /// <summary>Per-user folder: <c>%LocalAppData%\4RTools\PartyWingBuffTools\profiles\*.json</c>.</summary>
     private string GetProfileDirectoryPath()
     {
         return Path.Combine(GetAppDataRootPath(), "profiles");
-    }
-
-    private string GetLegacyProfileDirectoryPath()
-    {
-        return Path.Combine(AppContext.BaseDirectory, "Profiles");
     }
 
     private string GetAppDataRootPath()
@@ -1347,37 +1355,116 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Best-effort copy from portable/legacy folders beside the exe into AppData so upgrades do not lose profiles.
+    /// </summary>
     private void TryMigrateLegacyProfiles()
     {
-        string sourceDir = GetLegacyProfileDirectoryPath();
         string targetDir = GetProfileDirectoryPath();
 
         try
         {
-            if (!Directory.Exists(sourceDir))
-            {
-                return;
-            }
-
             Directory.CreateDirectory(targetDir);
-            foreach (string sourceFile in Directory.GetFiles(sourceDir, "*.json"))
-            {
-                string fileName = Path.GetFileName(sourceFile);
-                if (string.IsNullOrWhiteSpace(fileName))
-                {
-                    continue;
-                }
 
-                string targetFile = Path.Combine(targetDir, fileName);
-                if (!File.Exists(targetFile))
-                {
-                    File.Copy(sourceFile, targetFile);
-                }
-            }
+            TryCopyProfileJsonFiles(Path.Combine(AppContext.BaseDirectory, "profiles"), targetDir);
+            TryCopyProfileJsonFiles(Path.Combine(AppContext.BaseDirectory, "Profiles"), targetDir);
         }
         catch
         {
             // best-effort migration only
+        }
+    }
+
+    private void OpenProfileFolderInExplorer()
+    {
+        try
+        {
+            string dir = GetProfileDirectoryPath();
+            Directory.CreateDirectory(dir);
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = dir,
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Could not open profile folder: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Uses the Win32 common dialog (not WinRT FileOpenPicker) so import works for unpackaged WinUI.
+    /// </summary>
+    private void ImportProfilesFromDisk()
+    {
+        try
+        {
+            IntPtr hwnd = WindowNative.GetWindowHandle(this);
+            IReadOnlyList<string> paths = ComDlgOpenMultipleFiles.ShowOpenJson(hwnd);
+            if (paths.Count == 0)
+            {
+                return;
+            }
+
+            string targetDir = GetProfileDirectoryPath();
+            Directory.CreateDirectory(targetDir);
+
+            int imported = 0;
+            foreach (string path in paths)
+            {
+                if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                {
+                    continue;
+                }
+
+                if (!path.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                string name = Path.GetFileName(path);
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                string destPath = Path.Combine(targetDir, name);
+                File.Copy(path, destPath, overwrite: true);
+                imported++;
+            }
+
+            AppendLog(imported == 0
+                ? "No .json files were imported."
+                : $"Imported {imported} profile file(s).");
+            RefreshProfileList(selectProfileName: _currentProfileName);
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"Import failed: {ex.Message}");
+        }
+    }
+
+    private static void TryCopyProfileJsonFiles(string sourceDir, string targetDir)
+    {
+        if (!Directory.Exists(sourceDir))
+        {
+            return;
+        }
+
+        foreach (string sourceFile in Directory.GetFiles(sourceDir, "*.json"))
+        {
+            string fileName = Path.GetFileName(sourceFile);
+            if (string.IsNullOrWhiteSpace(fileName))
+            {
+                continue;
+            }
+
+            string targetFile = Path.Combine(targetDir, fileName);
+            if (!File.Exists(targetFile))
+            {
+                File.Copy(sourceFile, targetFile);
+            }
         }
     }
 
