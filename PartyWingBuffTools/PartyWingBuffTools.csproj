@@ -16,12 +16,16 @@
     <WindowsAppSdkUndockedRegFreeWinRTInitialize>true</WindowsAppSdkUndockedRegFreeWinRTInitialize>
     <PlatformTarget>x86</PlatformTarget>
     <Nullable>enable</Nullable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;dist\**;bin\**;obj\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <!-- This is a temporary workaround to test dotnet new template - it will block vstemplate from working -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="*" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="*" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\RagnarokAutomation.Core\RagnarokAutomation.Core.csproj" />
   </ItemGroup>
 
   <!-- Publish Properties -->

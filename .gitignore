@@ -399,3 +399,6 @@ FodyWeavers.xsd
 
 # PartyWingBuffTools portable zip / staging (build-and-zip.ps1)
 PartyWingBuffTools/dist/
+
+# RagnarokReconnectWinUI portable zip / staging (build-and-zip.ps1)
+RagnarokReconnectWinUI/dist/

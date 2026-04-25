@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using PartyWingBuffTools.Core.Models;
+using RagnarokAutomation.Core;
 
 namespace PartyWingBuffTools.Services;
 
@@ -58,7 +59,11 @@ public sealed class RagnarokProcessService
 
                 int effectiveNameAddress = matched?.NameAddress ?? fallbackNameAddress;
 
-                string characterName = TryReadCharacterName(process.Id, effectiveNameAddress, moduleBase);
+                string characterName = CharacterNameMemoryResolver.TryReadCharacterName(
+                    _memoryReader,
+                    process.Id,
+                    effectiveNameAddress,
+                    moduleBase);
                 if (string.IsNullOrWhiteSpace(characterName) &&
                     !process.MainWindowTitle.Contains("Ragnarok", StringComparison.OrdinalIgnoreCase))
                 {
@@ -165,55 +170,6 @@ public sealed class RagnarokProcessService
         return 0;
     }
 
-    private string TryReadCharacterName(int processId, int nameAddress, int moduleBase)
-    {
-        // Strategy 1: absolute address direct read (legacy 4RTools behavior)
-        string value = _memoryReader.ReadAsciiString(processId, nameAddress);
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            return value;
-        }
-
-        // Strategy 2: absolute address as pointer to name buffer
-        int pointed = _memoryReader.TryReadPointer32(processId, nameAddress);
-        if (pointed > 0)
-        {
-            value = _memoryReader.ReadAsciiString(processId, pointed);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-        }
-
-        if (moduleBase <= 0)
-        {
-            return string.Empty;
-        }
-
-        // Strategy 3: module-relative address direct read
-        long relative = (long)moduleBase + nameAddress;
-        if (relative is > 0 and <= int.MaxValue)
-        {
-            value = _memoryReader.ReadAsciiString(processId, (int)relative);
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-
-            // Strategy 4: module-relative address as pointer
-            pointed = _memoryReader.TryReadPointer32(processId, (int)relative);
-            if (pointed > 0)
-            {
-                value = _memoryReader.ReadAsciiString(processId, pointed);
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    return value;
-                }
-            }
-        }
-
-        return string.Empty;
-    }
 }
 
 public sealed class SupportedServerEntry

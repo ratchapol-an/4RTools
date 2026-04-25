@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="RagnarokReconnectWinUI.Pages.ProcessesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="16" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Processes" />
+        <TextBlock
+            Grid.Row="1"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="Raw process snapshot view for Ragnarok clients and network/socket diagnostics." />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+            <Button Content="Refresh Processes" Click="RefreshProcesses_Click" />
+        </StackPanel>
+
+        <ListView Grid.Row="3" ItemsSource="{x:Bind Processes, Mode=OneWay}">
+            <ListView.Header>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="80" />
+                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="100" />
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="160" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="PID" />
+                    <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Process" />
+                    <TextBlock Grid.Column="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Character" />
+                    <TextBlock Grid.Column="3" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Alive" />
+                    <TextBlock Grid.Column="4" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Established" />
+                    <TextBlock Grid.Column="5" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Closing" />
+                    <TextBlock Grid.Column="6" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Remote Ports" />
+                </Grid>
+            </ListView.Header>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Border Margin="0,4,0,4" Padding="10" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <TextBlock Width="80" Text="{Binding ProcessId}" />
+                            <TextBlock Width="180" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{Binding ProcessName}" />
+                            <TextBlock Width="180" Text="{Binding MemoryCharacterName}" />
+                            <TextBlock Width="100" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding IsProcessAlive}" />
+                            <TextBlock Width="120" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding EstablishedConnections}" />
+                            <TextBlock Width="120" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding ClosingConnections}" />
+                            <TextBlock Width="160" Text="{Binding RemotePorts}" />
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>

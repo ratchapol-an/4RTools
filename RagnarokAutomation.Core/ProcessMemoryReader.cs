@@ -1,9 +1,9 @@
-using System;
 using System.Runtime.InteropServices;
+using System.Text;
 
-namespace PartyWingBuffTools.Services;
+namespace RagnarokAutomation.Core;
 
-internal sealed class ProcessMemoryReader
+public sealed class ProcessMemoryReader
 {
     [Flags]
     private enum ProcessAccess
@@ -37,14 +37,13 @@ internal sealed class ProcessMemoryReader
         {
             byte[] buffer = new byte[maxBytes];
             _ = ReadProcessMemory(handle, new IntPtr(address), buffer, (uint)buffer.Length, out _);
-
             int length = Array.IndexOf(buffer, (byte)0);
             if (length < 0)
             {
                 length = buffer.Length;
             }
 
-            return System.Text.Encoding.Default.GetString(buffer, 0, length).Trim();
+            return Encoding.Default.GetString(buffer, 0, length).Trim();
         }
         catch
         {
@@ -68,7 +67,6 @@ internal sealed class ProcessMemoryReader
         {
             byte[] buffer = new byte[4];
             _ = ReadProcessMemory(handle, new IntPtr(address), buffer, (uint)buffer.Length, out _);
-
             return BitConverter.ToInt32(buffer, 0);
         }
         catch
@@ -93,7 +91,6 @@ internal sealed class ProcessMemoryReader
         {
             byte[] buffer = new byte[4];
             _ = ReadProcessMemory(handle, new IntPtr(address), buffer, (uint)buffer.Length, out _);
-
             return BitConverter.ToUInt32(buffer, 0);
         }
         catch

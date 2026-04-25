@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "RagnarokReconnectWinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "RagnarokReconnectWinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

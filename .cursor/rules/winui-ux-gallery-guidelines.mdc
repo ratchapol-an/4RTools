@@ -1,0 +1,35 @@
+---
+description: WinUI Gallery-inspired UX conventions for app pages
+globs: RagnarokReconnectWinUI/Pages/**/*
+alwaysApply: false
+---
+
+# WinUI Page UX Guidelines
+
+Use these patterns for `RagnarokReconnectWinUI/Pages` files:
+
+- Use Windows type ramp for hierarchy:
+  - Page title: `TitleTextBlockStyle`
+  - Section heading: `SubtitleTextBlockStyle` or `BodyStrongTextBlockStyle`
+  - Metadata: `CaptionTextBlockStyle` + `TextFillColorSecondaryBrush`
+- Keep strong grouping and spacing:
+  - Explicit `Grid.RowDefinitions`
+  - `Padding` ~16 and `RowSpacing` ~8-12
+  - Visually separate dense rows with `Border` cards where readability is better than a raw table.
+- Apply command basics:
+  - Primary page actions near top
+  - Context actions near section headers/content (`Refresh`, `Save`, `Copy`, `Test Send`).
+- Apply content basics:
+  - Prefer scannable labels and short summaries.
+  - Use consistent terms: `Character`, `Status`, `Cause`, `Info`, `Time`.
+  - Keep secondary/diagnostic detail in lower-contrast text.
+- Avoid runtime UI injection for core layout controls; define structure directly in XAML.
+- For logs, default to concise one-line entries and provide optional deep diagnostics.
+
+## Example
+
+```xaml
+<TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Monitoring" />
+<TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Live process health and alert toggles." />
+<TextBlock Style="{StaticResource BodyStrongTextBlockStyle}" Text="Recent Incidents" />
+```

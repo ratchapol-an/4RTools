@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="RagnarokReconnectWinUI.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:RagnarokReconnectWinUI.Pages"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="16" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
+        <TextBlock
+            Grid.Row="1"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="Configure monitoring intervals, Discord token, and local testing options." />
+        <PasswordBox x:Name="DiscordTokenInput" Grid.Row="2" Header="Discord Bot Token" />
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="8">
+            <NumberBox x:Name="PollIntervalInput" Header="Poll Interval (seconds)" SmallChange="1" Minimum="1" Width="210" />
+            <NumberBox x:Name="DedupWindowInput" Header="Dedup Window (minutes)" SmallChange="1" Minimum="1" Width="210" />
+            <NumberBox x:Name="HeartbeatWindowInput" Header="Heartbeat (minutes)" SmallChange="1" Minimum="5" Width="210" />
+        </StackPanel>
+
+        <ToggleSwitch
+            x:Name="SimulateInternetDownToggle"
+            Grid.Row="4"
+            Header="Simulate Internet Down (testing)"
+            OffContent="Off"
+            OnContent="On" />
+
+        <Button Grid.Row="5" Content="Save Settings" HorizontalAlignment="Left" Click="SaveSettings_Click" />
+        <StackPanel Grid.Row="6" Orientation="Horizontal" Spacing="8">
+            <Button Content="Open Config File" Click="OpenConfigFile_Click" />
+            <Button Content="Open Config Folder" Click="OpenConfigFolder_Click" />
+            <TextBlock
+                x:Name="SavedText"
+                VerticalAlignment="Center"
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+        </StackPanel>
+    </Grid>
+</Page>

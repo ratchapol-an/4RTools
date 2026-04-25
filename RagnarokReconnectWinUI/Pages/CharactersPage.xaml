@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="RagnarokReconnectWinUI.Pages.CharactersPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="16" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Characters" />
+        <TextBlock
+            Grid.Row="1"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="Map each character to username, encrypted password, and slot position." />
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+            <TextBox x:Name="CharacterNameInput" Width="150" Header="Character Name" />
+            <TextBox x:Name="UsernameInput" Width="150" Header="Username" />
+            <PasswordBox x:Name="PasswordInput" Width="160" Header="Password" />
+            <NumberBox x:Name="SlotRowInput" Width="90" Header="Slot Row" Value="0" />
+            <NumberBox x:Name="SlotColumnInput" Width="90" Header="Slot Column" Value="0" />
+            <Button VerticalAlignment="Bottom" Content="Add / Update" Click="SaveCharacter_Click" />
+            <Button VerticalAlignment="Bottom" Content="Save All" Click="SaveAll_Click" />
+        </StackPanel>
+
+        <ListView Grid.Row="3" ItemsSource="{x:Bind Characters, Mode=OneWay}">
+            <ListView.Header>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="100" />
+                        <ColumnDefinition Width="100" />
+                        <ColumnDefinition Width="90" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Character" />
+                    <TextBlock Grid.Column="1" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Username" />
+                    <TextBlock Grid.Column="2" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Slot Row" />
+                    <TextBlock Grid.Column="3" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Slot Column" />
+                    <TextBlock Grid.Column="4" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Action" />
+                </Grid>
+            </ListView.Header>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Border Margin="0,4,0,4" Padding="10" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="6">
+                        <StackPanel Spacing="8">
+                            <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{Binding DisplayVisibility}">
+                                <TextBlock Width="150" Style="{StaticResource BodyStrongTextBlockStyle}" Text="{Binding CharacterName}" />
+                                <TextBlock Width="150" Text="{Binding Username}" />
+                                <TextBlock Width="100" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding SlotRow}" />
+                                <TextBlock Width="100" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{Binding SlotColumn}" />
+                                <Button Width="90" Content="Edit" Click="EditCharacter_Click" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="12" Visibility="{Binding EditVisibility}">
+                                <TextBox Width="150" Text="{Binding EditCharacterName, Mode=TwoWay}" />
+                                <TextBox Width="150" Text="{Binding EditUsername, Mode=TwoWay}" />
+                                <TextBox Width="160" Text="{Binding EditPassword, Mode=TwoWay}" />
+                                <NumberBox Width="100" Value="{Binding EditSlotRow, Mode=TwoWay}" />
+                                <NumberBox Width="100" Value="{Binding EditSlotColumn, Mode=TwoWay}" />
+                                <Button Width="90" Content="Save" Click="SaveRow_Click" />
+                                <Button Width="90" Content="Discard" Click="DiscardRow_Click" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+    </Grid>
+</Page>
