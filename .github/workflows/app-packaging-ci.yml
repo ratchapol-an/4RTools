@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   detect-changes:
     runs-on: ubuntu-latest
@@ -121,3 +124,27 @@ jobs:
           name: RagnarokReconnectWinUI-Portable-v${{ steps.version.outputs.value }}
           path: RagnarokReconnectWinUI/dist/*.zip
           if-no-files-found: error
+
+  create-release:
+    needs:
+      - detect-changes
+      - build-partywing-portable
+      - build-reconnect-portable
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.partywing == 'true' || needs.detect-changes.outputs.reconnect == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download zip artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "*Portable-v*"
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create or update GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ci-v${{ github.run_number }}
+          name: CI Build v${{ github.run_number }}
+          prerelease: true
+          generate_release_notes: true
+          files: release-artifacts/*.zip
