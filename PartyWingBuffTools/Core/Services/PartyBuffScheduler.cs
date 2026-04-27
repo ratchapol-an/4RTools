@@ -32,13 +32,17 @@ public sealed class PartyBuffScheduler
 
             foreach (MemberSequenceConfig member in trigger.Members)
             {
-                foreach (KeyStepConfig step in member.KeySequence.Where(k => !string.IsNullOrWhiteSpace(k.Key)))
+                var steps = member.KeySequence
+                    .Where(k => !string.IsNullOrWhiteSpace(k.Key))
+                    .ToList();
+                for (int stepIndex = 0; stepIndex < steps.Count; stepIndex++)
                 {
+                    KeyStepConfig step = steps[stepIndex];
                     actions.Add(new DispatchAction
                     {
                         ProcessId = member.ProcessId,
                         Key = step.Key,
-                        Reason = $"{trigger.Name}:{member.CharacterLabel}",
+                        Reason = $"{trigger.Name}:{member.CharacterLabel}:{member.ProcessId}:Step{stepIndex + 1}",
                         DelayAfterMs = Math.Max(0, step.DelayAfterMs),
                     });
                 }

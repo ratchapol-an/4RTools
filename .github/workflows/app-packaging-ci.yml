@@ -1,0 +1,123 @@
+name: App Packaging CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      partywing: ${{ steps.filter.outputs.partywing }}
+      reconnect: ${{ steps.filter.outputs.reconnect }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect changed app paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            partywing:
+              - 'PartyWingBuffTools/**'
+              - 'RagnarokAutomation.Core/**'
+              - '.github/workflows/app-packaging-ci.yml'
+            reconnect:
+              - 'RagnarokReconnectWinUI/**'
+              - 'RagnarokAutomation.Core/**'
+              - '.github/workflows/app-packaging-ci.yml'
+
+  build-partywing-portable:
+    needs: detect-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.partywing == 'true' }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Compute CI version
+        id: version
+        run: |
+          $csprojPath = "PartyWingBuffTools/PartyWingBuffTools.csproj"
+          [xml]$xml = Get-Content -Path $csprojPath
+          $baseVersion = $xml.Project.PropertyGroup.Version | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($baseVersion)) {
+            $baseVersion = "1.0.0"
+          }
+
+          $parts = $baseVersion.Split(".")
+          $major = [int]$parts[0]
+          $minor = [int]$parts[1]
+          $ciVersion = "$major.$minor.$env:GITHUB_RUN_NUMBER"
+
+          "value=$ciVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Using CI version: $ciVersion"
+
+      - name: Build portable zip
+        run: |
+          ./PartyWingBuffTools/build-and-zip.ps1 -Version "${{ steps.version.outputs.value }}"
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PartyWingBuffTools-Portable-v${{ steps.version.outputs.value }}
+          path: PartyWingBuffTools/dist/*.zip
+          if-no-files-found: error
+
+  build-reconnect-portable:
+    needs: detect-changes
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.reconnect == 'true' }}
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Compute CI version
+        id: version
+        run: |
+          $csprojPath = "RagnarokReconnectWinUI/RagnarokReconnectWinUI.csproj"
+          [xml]$xml = Get-Content -Path $csprojPath
+          $baseVersion = $xml.Project.PropertyGroup.Version | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+          if ([string]::IsNullOrWhiteSpace($baseVersion)) {
+            $baseVersion = "1.0.0"
+          }
+
+          $parts = $baseVersion.Split(".")
+          $major = [int]$parts[0]
+          $minor = [int]$parts[1]
+          $ciVersion = "$major.$minor.$env:GITHUB_RUN_NUMBER"
+
+          "value=$ciVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "Using CI version: $ciVersion"
+
+      - name: Build portable zip
+        run: |
+          ./RagnarokReconnectWinUI/build-and-zip.ps1 -Version "${{ steps.version.outputs.value }}"
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RagnarokReconnectWinUI-Portable-v${{ steps.version.outputs.value }}
+          path: RagnarokReconnectWinUI/dist/*.zip
+          if-no-files-found: error

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +14,7 @@ using PartyWingBuffTools.Core.Models;
 using PartyWingBuffTools.Core.Services;
 using PartyWingBuffTools.Native;
 using PartyWingBuffTools.Services;
+using Windows.Graphics;
 using WinRT.Interop;
 
 namespace PartyWingBuffTools;
@@ -24,6 +26,8 @@ public sealed partial class MainWindow : Window
     private const string DefaultNameAddressHex = "01471CD8";
     private const string DefaultProfileName = "Default";
     private const int MaxDisplayedLogLines = 50;
+    private const int StartupWindowWidth = 1180;
+    private const int StartupWindowHeight = 760;
 
     private readonly RagnarokProcessService _processService = new();
     private readonly KeyDispatchService _keyDispatchService = new();
@@ -33,6 +37,10 @@ public sealed partial class MainWindow : Window
     private readonly Queue<DispatchPlan> _triggerQueue = new();
     private readonly object _triggerQueueLock = new();
     private readonly List<SupportedServerEntry> _supportedServers = new();
+    private readonly Dictionary<TriggerDefinition, IReadOnlyList<Control>> _triggerVisuals = new();
+    private readonly Dictionary<TriggerDefinition, TextBlock> _triggerIndicatorByTrigger = new();
+    private readonly Dictionary<string, IReadOnlyList<Control>> _stepVisualsByReason = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, TextBlock> _stepIndicatorByReason = new(StringComparer.OrdinalIgnoreCase);
     private TriggerDefinition? _selectedTrigger;
     private CancellationTokenSource? _runCts;
     private int? _pendingArchbishopProcessId;
@@ -44,6 +52,7 @@ public sealed partial class MainWindow : Window
     private readonly SemaphoreSlim _logSignal = new(0);
     private readonly CancellationTokenSource _logWriterCts = new();
     private Task? _logWriterTask;
+    private readonly string _appVersion;
 
     private ComboBox _archbishopProcessComboBox = null!;
     private TextBlock _archbishopCharacterText = null!;
@@ -63,15 +72,20 @@ public sealed partial class MainWindow : Window
     private TextBox _nameAddressTextBox = null!;
     private ComboBox _profileComboBox = null!;
     private TextBox _profileNameTextBox = null!;
+    private Microsoft.UI.Xaml.Media.Brush _normalForegroundBrush = null!;
+    private Microsoft.UI.Xaml.Media.Brush _executingForegroundBrush = null!;
 
     public MainWindow()
     {
+        _appVersion = ReadAppVersion();
         InitializeComponent();
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
 
         BuildUi();
+        AppWindow.Resize(new SizeInt32(StartupWindowWidth, StartupWindowHeight));
+        InitializeExecutionIndicatorBrushes();
         EnsureDefaultProfileExists();
         RefreshProfileList(selectProfileName: DefaultProfileName);
         LoadProfile(_currentProfileName, logResult: false);
@@ -103,7 +117,7 @@ public sealed partial class MainWindow : Window
 
         var navTitle = new TextBlock
         {
-            Text = "PartyWingBuffTools",
+            Text = $"PartyWingBuffTools v{_appVersion}",
             FontWeight = FontWeights.Bold,
             FontSize = 16,
             Margin = new Thickness(8, 8, 8, 14),
@@ -130,7 +144,7 @@ public sealed partial class MainWindow : Window
 
         var navFooter = new TextBlock
         {
-            Text = "Profiles and logs are on left menu",
+            Text = $"Profiles and logs are on left menu{Environment.NewLine}Version: v{_appVersion}",
             Margin = new Thickness(8),
             Opacity = 0.7,
             TextWrapping = TextWrapping.Wrap,
@@ -354,31 +368,33 @@ public sealed partial class MainWindow : Window
         wrapper.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        title.Children.Add(new TextBlock { Text = "🔁 Trigger Sequences", FontWeight = FontWeights.Bold, FontSize = 15 });
-        var addButton = new Button { Content = "+ Add Trigger" };
+        title.Children.Add(new TextBlock { Text = "🔁 Trigger Sequences", FontWeight = FontWeights.SemiBold, FontSize = 16 });
+        var addButton = new Button { Content = "+ Add Trigger", MinWidth = 110 };
         addButton.Click += (_, _) => AddTrigger();
         title.Children.Add(addButton);
         wrapper.Children.Add(title);
 
-        var header = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 8, 0, 4) };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.55, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var header = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 8, 0, 4), HorizontalAlignment = HorizontalAlignment.Left };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        header.Children.Add(HeaderText("Active", 0));
-        header.Children.Add(HeaderText("Name", 1));
-        header.Children.Add(HeaderText("Interval(s)", 2));
-        header.Children.Add(HeaderText("Teleport", 3));
-        header.Children.Add(HeaderText("Post Delay(ms)", 4));
-        header.Children.Add(HeaderText("Members", 5));
-        header.Children.Add(HeaderText("Remove", 6));
+        header.Children.Add(HeaderText(string.Empty, 0));
+        header.Children.Add(HeaderText("Active", 1));
+        header.Children.Add(HeaderText("Name", 2));
+        header.Children.Add(HeaderText("Interval(s)", 3));
+        header.Children.Add(HeaderText("Teleport", 4));
+        header.Children.Add(HeaderText("Post Delay(ms)", 5));
+        header.Children.Add(HeaderText("Members", 6));
+        header.Children.Add(HeaderText("Remove", 7));
         Grid.SetRow(header, 1);
         wrapper.Children.Add(header);
 
-        _triggerRowsHost = new StackPanel { Spacing = 6 };
+        _triggerRowsHost = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Left };
         var scroll = new ScrollViewer { Content = _triggerRowsHost, Height = 120 };
         Grid.SetRow(scroll, 2);
         wrapper.Children.Add(scroll);
@@ -393,9 +409,9 @@ public sealed partial class MainWindow : Window
         wrapper.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
         var title = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        _memberEditorTitle = new TextBlock { Text = "👥 Members for trigger: -", FontWeight = FontWeights.Bold, FontSize = 15 };
+        _memberEditorTitle = new TextBlock { Text = "👥 Members for trigger: -", FontWeight = FontWeights.SemiBold, FontSize = 16 };
         title.Children.Add(_memberEditorTitle);
-        var addButton = new Button { Content = "+ Add Member" };
+        var addButton = new Button { Content = "+ Add Member", MinWidth = 110 };
         addButton.Click += (_, _) => AddMemberToSelectedTrigger();
         title.Children.Add(addButton);
         title.Children.Add(new TextBlock
@@ -405,11 +421,11 @@ public sealed partial class MainWindow : Window
         });
         wrapper.Children.Add(title);
 
-        var header = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 8, 0, 4) };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.55, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.6, GridUnitType.Star) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.8, GridUnitType.Star) });
+        var header = new Grid { ColumnSpacing = 6, Margin = new Thickness(0, 8, 0, 4), HorizontalAlignment = HorizontalAlignment.Left };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(HeaderText("Active", 0));
         header.Children.Add(HeaderText("Role/Label", 1));
@@ -419,7 +435,7 @@ public sealed partial class MainWindow : Window
         Grid.SetRow(header, 1);
         wrapper.Children.Add(header);
 
-        _memberRowsHost = new StackPanel { Spacing = 6 };
+        _memberRowsHost = new StackPanel { Spacing = 6, HorizontalAlignment = HorizontalAlignment.Left };
         var scroll = new ScrollViewer { Content = _memberRowsHost };
         Grid.SetRow(scroll, 2);
         wrapper.Children.Add(scroll);
@@ -439,22 +455,32 @@ public sealed partial class MainWindow : Window
         };
         _triggers.Add(trigger);
 
-        var rowGrid = new Grid { ColumnSpacing = 6 };
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.55, GridUnitType.Star) });
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
-        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var rowGrid = new Grid { ColumnSpacing = 6, HorizontalAlignment = HorizontalAlignment.Left };
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var activeCheck = new CheckBox { IsChecked = isActive, VerticalAlignment = VerticalAlignment.Center };
-        var nameBox = new TextBox { Text = name, PlaceholderText = "Buff60" };
-        var intervalBox = new TextBox { Text = interval, PlaceholderText = "60" };
-        var teleportBox = new TextBox { Text = teleport, PlaceholderText = "F1", IsReadOnly = true };
-        var delayBox = new TextBox { Text = postDelay, PlaceholderText = "300" };
-        var membersButton = new Button { Content = "Edit" };
-        var removeButton = new Button { Content = "X" };
+        var indicator = new TextBlock
+        {
+            Text = "●",
+            Visibility = Visibility.Collapsed,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 0, 6, 0),
+            Foreground = _executingForegroundBrush,
+            FontWeight = FontWeights.Bold,
+        };
+        var activeCheck = new CheckBox { IsChecked = isActive, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+        var nameBox = new TextBox { Text = name, PlaceholderText = "Buff60", Width = 170, HorizontalAlignment = HorizontalAlignment.Left };
+        var intervalBox = new TextBox { Text = interval, PlaceholderText = "60", Width = 88, HorizontalAlignment = HorizontalAlignment.Left };
+        var teleportBox = new TextBox { Text = teleport, PlaceholderText = "F1", IsReadOnly = true, Width = 88, HorizontalAlignment = HorizontalAlignment.Left };
+        var delayBox = new TextBox { Text = postDelay, PlaceholderText = "300", Width = 100, HorizontalAlignment = HorizontalAlignment.Left };
+        var membersButton = new Button { Content = "Edit", HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 52 };
+        var removeButton = new Button { Content = "X", MinWidth = 34 };
 
         activeCheck.Checked += (_, _) => trigger.IsActive = true;
         activeCheck.Unchecked += (_, _) => trigger.IsActive = false;
@@ -486,6 +512,8 @@ public sealed partial class MainWindow : Window
         removeButton.Click += (_, _) =>
         {
             _triggers.Remove(trigger);
+            _triggerVisuals.Remove(trigger);
+            _triggerIndicatorByTrigger.Remove(trigger);
             _triggerRowsHost.Children.Remove(rowGrid);
             if (_selectedTrigger == trigger)
             {
@@ -493,13 +521,15 @@ public sealed partial class MainWindow : Window
             }
         };
 
-        Grid.SetColumn(activeCheck, 0);
-        Grid.SetColumn(nameBox, 1);
-        Grid.SetColumn(intervalBox, 2);
-        Grid.SetColumn(teleportBox, 3);
-        Grid.SetColumn(delayBox, 4);
-        Grid.SetColumn(membersButton, 5);
-        Grid.SetColumn(removeButton, 6);
+        Grid.SetColumn(indicator, 0);
+        Grid.SetColumn(activeCheck, 1);
+        Grid.SetColumn(nameBox, 2);
+        Grid.SetColumn(intervalBox, 3);
+        Grid.SetColumn(teleportBox, 4);
+        Grid.SetColumn(delayBox, 5);
+        Grid.SetColumn(membersButton, 6);
+        Grid.SetColumn(removeButton, 7);
+        rowGrid.Children.Add(indicator);
         rowGrid.Children.Add(activeCheck);
         rowGrid.Children.Add(nameBox);
         rowGrid.Children.Add(intervalBox);
@@ -508,6 +538,8 @@ public sealed partial class MainWindow : Window
         rowGrid.Children.Add(membersButton);
         rowGrid.Children.Add(removeButton);
 
+        _triggerVisuals[trigger] = new Control[] { nameBox, intervalBox, teleportBox, delayBox, membersButton };
+        _triggerIndicatorByTrigger[trigger] = indicator;
         _triggerRowsHost.Children.Add(rowGrid);
     }
 
@@ -541,6 +573,8 @@ public sealed partial class MainWindow : Window
     private void RenderMembers()
     {
         _memberRowsHost.Children.Clear();
+        _stepVisualsByReason.Clear();
+        _stepIndicatorByReason.Clear();
         if (_selectedTrigger is null)
         {
             _memberEditorTitle.Text = "Members for trigger: -";
@@ -550,39 +584,50 @@ public sealed partial class MainWindow : Window
         _memberEditorTitle.Text = $"Members for trigger: {_selectedTrigger.Name}";
         foreach (MemberDefinition member in _selectedTrigger.Members)
         {
-            var rowGrid = new Grid { ColumnSpacing = 6 };
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.55, GridUnitType.Star) });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.2, GridUnitType.Star) });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.6, GridUnitType.Star) });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(2.8, GridUnitType.Star) });
+            var rowGrid = new Grid { ColumnSpacing = 6, HorizontalAlignment = HorizontalAlignment.Left };
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var activeCheck = new CheckBox { IsChecked = member.IsActive, VerticalAlignment = VerticalAlignment.Center };
-            var labelBox = new TextBox { Text = member.Label, PlaceholderText = "Bard" };
-            var processCombo = new ComboBox { ItemsSource = _availableProcesses, DisplayMemberPath = "DisplayName", SelectedValuePath = "ProcessId" };
+            var activeCheck = new CheckBox { IsChecked = member.IsActive, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
+            var labelBox = new TextBox { Text = member.Label, PlaceholderText = "Bard", Width = 170, HorizontalAlignment = HorizontalAlignment.Left };
+            var processCombo = new ComboBox { ItemsSource = _availableProcesses, DisplayMemberPath = "DisplayName", SelectedValuePath = "ProcessId", HorizontalAlignment = HorizontalAlignment.Left, Width = 250 };
             if (int.TryParse(member.ProcessIdText, out int pid))
             {
                 processCombo.SelectedValue = pid;
             }
-            var removeButton = new Button { Content = "X" };
+            var removeButton = new Button { Content = "X", MinWidth = 34 };
             var stepsHost = new StackPanel { Spacing = 4 };
-            var addStepButton = new Button { Content = "+ Step", HorizontalAlignment = HorizontalAlignment.Left };
+            var addStepButton = new Button { Content = "+ Step", HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 72 };
 
             if (member.KeySteps.Count == 0)
             {
                 member.KeySteps.Add(new KeyStepDefinition { KeyText = string.Empty, DelayText = "250" });
             }
 
-            foreach (KeyStepDefinition step in member.KeySteps.ToList())
+            for (int stepIndex = 0; stepIndex < member.KeySteps.Count; stepIndex++)
             {
+                KeyStepDefinition step = member.KeySteps[stepIndex];
                 var stepGrid = new Grid { ColumnSpacing = 4 };
-                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.1, GridUnitType.Star) });
-                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(0.8, GridUnitType.Star) });
+                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
                 stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-                var stepKeyBox = new TextBox { Text = step.KeyText, PlaceholderText = "Press key", IsReadOnly = true };
-                var stepDelayBox = new TextBox { Text = step.DelayText, PlaceholderText = "250" };
-                var removeStepButton = new Button { Content = "-" };
+                var stepIndicator = new TextBlock
+                {
+                    Text = "●",
+                    Visibility = Visibility.Collapsed,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 4, 0),
+                    Foreground = _executingForegroundBrush,
+                    FontWeight = FontWeights.Bold,
+                };
+                var stepKeyBox = new TextBox { Text = step.KeyText, PlaceholderText = "Key", IsReadOnly = true, Width = 76, HorizontalAlignment = HorizontalAlignment.Left };
+                var stepDelayBox = new TextBox { Text = step.DelayText, PlaceholderText = "250", Width = 76, HorizontalAlignment = HorizontalAlignment.Left };
+                var removeStepButton = new Button { Content = "-", MinWidth = 34 };
 
                 stepKeyBox.TextChanged += (_, _) => step.KeyText = stepKeyBox.Text;
                 stepDelayBox.TextChanged += (_, _) => step.DelayText = stepDelayBox.Text;
@@ -611,13 +656,23 @@ public sealed partial class MainWindow : Window
                     RenderMembers();
                 };
 
-                Grid.SetColumn(stepKeyBox, 0);
-                Grid.SetColumn(stepDelayBox, 1);
-                Grid.SetColumn(removeStepButton, 2);
+                Grid.SetColumn(stepIndicator, 0);
+                Grid.SetColumn(stepKeyBox, 1);
+                Grid.SetColumn(stepDelayBox, 2);
+                Grid.SetColumn(removeStepButton, 3);
+                stepGrid.Children.Add(stepIndicator);
                 stepGrid.Children.Add(stepKeyBox);
                 stepGrid.Children.Add(stepDelayBox);
                 stepGrid.Children.Add(removeStepButton);
                 stepsHost.Children.Add(stepGrid);
+
+                if (int.TryParse(member.ProcessIdText, out int processId))
+                {
+                    string memberLabel = GetMemberReasonLabel(member, processId);
+                    string reason = BuildStepReason(_selectedTrigger.Name, memberLabel, processId, stepIndex + 1);
+                    _stepVisualsByReason[reason] = new Control[] { stepKeyBox, stepDelayBox };
+                    _stepIndicatorByReason[reason] = stepIndicator;
+                }
             }
 
             addStepButton.Click += (_, _) =>
@@ -740,6 +795,7 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
+            await ClearExecutionVisualsAsync();
             _runCts?.Dispose();
             _runCts = null;
             _startButton.IsEnabled = true;
@@ -921,6 +977,9 @@ public sealed partial class MainWindow : Window
     private async Task ExecutePlanAsync(DispatchPlan plan, CancellationToken ct)
     {
         AppendLog($"Trigger fired: {plan.TriggerName}");
+        await SetTriggerExecutingVisualAsync(plan.TriggerName, isExecuting: true);
+        try
+        {
 
         // Execute Archbishop teleport first (if present), then run members in parallel.
         DispatchAction? teleportAction = plan.Actions.FirstOrDefault(a => a.Reason.EndsWith(":Teleport", StringComparison.OrdinalIgnoreCase));
@@ -939,7 +998,7 @@ public sealed partial class MainWindow : Window
 
         var memberSequences = plan.Actions
             .Where(a => !a.Reason.EndsWith(":Teleport", StringComparison.OrdinalIgnoreCase))
-            .GroupBy(a => (a.ProcessId, a.Reason))
+            .GroupBy(a => (a.ProcessId, GetMemberSequenceGroupKey(a.Reason)))
             .Select(g => g.ToList())
             .ToList();
 
@@ -953,22 +1012,162 @@ public sealed partial class MainWindow : Window
             .ToList();
 
         await Task.WhenAll(memberTasks);
+        }
+        finally
+        {
+            await SetTriggerExecutingVisualAsync(plan.TriggerName, isExecuting: false);
+        }
     }
 
     private async Task RunMemberSequenceAsync(IReadOnlyList<DispatchAction> sequence, CancellationToken ct)
     {
         foreach (DispatchAction action in sequence)
         {
-            bool sent = _keyDispatchService.SendKey(action.ProcessId, action.Key);
-            AppendLog(sent
-                ? $"Key {action.Key} -> {action.ProcessId} ({action.Reason})"
-                : $"Failed {action.Key} -> {action.ProcessId} ({action.Reason})");
-
-            if (action.DelayAfterMs > 0)
+            await SetStepExecutingVisualAsync(action.Reason, isExecuting: true);
+            try
             {
-                await Task.Delay(action.DelayAfterMs, ct);
+                bool sent = _keyDispatchService.SendKey(action.ProcessId, action.Key);
+                AppendLog(sent
+                    ? $"Key {action.Key} -> {action.ProcessId} ({action.Reason})"
+                    : $"Failed {action.Key} -> {action.ProcessId} ({action.Reason})");
+
+                if (action.DelayAfterMs > 0)
+                {
+                    await Task.Delay(action.DelayAfterMs, ct);
+                }
+            }
+            finally
+            {
+                await SetStepExecutingVisualAsync(action.Reason, isExecuting: false);
             }
         }
+    }
+
+    private string GetMemberReasonLabel(MemberDefinition member, int processId)
+    {
+        return string.IsNullOrWhiteSpace(member.Label) ? $"Process {processId}" : member.Label;
+    }
+
+    private static string BuildStepReason(string triggerName, string memberLabel, int processId, int stepNumber)
+    {
+        return $"{triggerName}:{memberLabel}:{processId}:Step{stepNumber}";
+    }
+
+    private static string GetMemberSequenceGroupKey(string reason)
+    {
+        int idx = reason.LastIndexOf(":Step", StringComparison.OrdinalIgnoreCase);
+        return idx > 0 ? reason[..idx] : reason;
+    }
+
+    private void InitializeExecutionIndicatorBrushes()
+    {
+        var resources = Application.Current.Resources;
+        _normalForegroundBrush = resources.TryGetValue("TextFillColorPrimaryBrush", out object? normal)
+            ? (Microsoft.UI.Xaml.Media.Brush)normal
+            : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.White);
+        _executingForegroundBrush = resources.TryGetValue("SystemFillColorCautionBrush", out object? accent)
+            ? (Microsoft.UI.Xaml.Media.Brush)accent
+            : new Microsoft.UI.Xaml.Media.SolidColorBrush(Microsoft.UI.Colors.Orange);
+    }
+
+    private async Task SetTriggerExecutingVisualAsync(string triggerName, bool isExecuting)
+    {
+        await RunOnUiThreadAsync(() =>
+        {
+            TriggerDefinition? trigger = _triggers.FirstOrDefault(t => t.Name.Equals(triggerName, StringComparison.OrdinalIgnoreCase));
+            if (trigger is null || !_triggerVisuals.TryGetValue(trigger, out IReadOnlyList<Control>? controls))
+            {
+                return;
+            }
+
+            SetControlsExecutionForeground(controls, isExecuting);
+            if (_triggerIndicatorByTrigger.TryGetValue(trigger, out TextBlock? indicator))
+            {
+                indicator.Visibility = isExecuting ? Visibility.Visible : Visibility.Collapsed;
+            }
+        });
+    }
+
+    private async Task SetStepExecutingVisualAsync(string reason, bool isExecuting)
+    {
+        await RunOnUiThreadAsync(() =>
+        {
+            if (_stepVisualsByReason.TryGetValue(reason, out IReadOnlyList<Control>? controls))
+            {
+                SetControlsExecutionForeground(controls, isExecuting);
+            }
+
+            if (_stepIndicatorByReason.TryGetValue(reason, out TextBlock? indicator))
+            {
+                indicator.Visibility = isExecuting ? Visibility.Visible : Visibility.Collapsed;
+            }
+        });
+    }
+
+    private Task RunOnUiThreadAsync(Action action)
+    {
+        if (DispatcherQueue.HasThreadAccess)
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        var tcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool enqueued = DispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                action();
+                tcs.SetResult(null);
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        if (!enqueued)
+        {
+            tcs.SetException(new InvalidOperationException("Unable to dispatch execution indicator update to UI thread."));
+        }
+
+        return tcs.Task;
+    }
+
+    private void SetControlsExecutionForeground(IEnumerable<Control> controls, bool isExecuting)
+    {
+        Microsoft.UI.Xaml.Media.Brush targetBrush = isExecuting ? _executingForegroundBrush : _normalForegroundBrush;
+        foreach (Control control in controls)
+        {
+            control.Foreground = targetBrush;
+            control.FontWeight = isExecuting ? FontWeights.Bold : FontWeights.Normal;
+        }
+    }
+
+    private async Task ClearExecutionVisualsAsync()
+    {
+        await RunOnUiThreadAsync(() =>
+        {
+            foreach (IReadOnlyList<Control> controls in _triggerVisuals.Values)
+            {
+                SetControlsExecutionForeground(controls, isExecuting: false);
+            }
+
+            foreach (IReadOnlyList<Control> controls in _stepVisualsByReason.Values)
+            {
+                SetControlsExecutionForeground(controls, isExecuting: false);
+            }
+
+            foreach (TextBlock indicator in _triggerIndicatorByTrigger.Values)
+            {
+                indicator.Visibility = Visibility.Collapsed;
+            }
+
+            foreach (TextBlock indicator in _stepIndicatorByReason.Values)
+            {
+                indicator.Visibility = Visibility.Collapsed;
+            }
+        });
     }
 
     private bool TryGetAddresses(out int hpAddress, out int nameAddress)
@@ -1036,9 +1235,30 @@ public sealed partial class MainWindow : Window
 
     private TextBlock HeaderText(string text, int col)
     {
-        var tb = new TextBlock { Text = text, FontWeight = FontWeights.SemiBold };
+        var tb = new TextBlock
+        {
+            Text = text,
+            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
+            VerticalAlignment = VerticalAlignment.Center,
+            Opacity = 0.9,
+        };
         Grid.SetColumn(tb, col);
         return tb;
+    }
+
+    private static string ReadAppVersion()
+    {
+        Assembly assembly = typeof(MainWindow).Assembly;
+        string? informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+        if (!string.IsNullOrWhiteSpace(informational))
+        {
+            int plusIndex = informational.IndexOf('+');
+            return plusIndex > 0 ? informational[..plusIndex] : informational;
+        }
+
+        Version? version = assembly.GetName().Version;
+        return version is null ? "0.0.0" : $"{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private void AppendLog(string message)
@@ -1688,6 +1908,10 @@ public sealed partial class MainWindow : Window
 
             _triggers.Clear();
             _triggerRowsHost.Children.Clear();
+            _triggerVisuals.Clear();
+            _triggerIndicatorByTrigger.Clear();
+            _stepVisualsByReason.Clear();
+            _stepIndicatorByReason.Clear();
 
             foreach (TriggerProfile trigger in profile.Triggers ?? new List<TriggerProfile>())
             {

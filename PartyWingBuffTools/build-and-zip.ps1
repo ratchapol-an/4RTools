@@ -1,17 +1,35 @@
 # Clean, build Release x86 portable output, zip for distribution.
 # Uses Release build folder (not dotnet publish) — known-good layout for this WinUI app.
 param(
-    [string]$ZipName = "PartyWingBuffTools-Portable.zip"
+    [string]$ZipName = "",
+    [string]$Version = ""
 )
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
 $repoRoot = Split-Path $root -Parent
 $distRoot = Join-Path $root "dist"
-$staging = Join-Path $distRoot "PartyWingBuffTools-Portable"
+$csprojPath = Join-Path $root "PartyWingBuffTools.csproj"
+$csprojXml = [xml](Get-Content -Path $csprojPath)
+$projectVersion = $csprojXml.Project.PropertyGroup.Version | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -First 1
+if ([string]::IsNullOrWhiteSpace($projectVersion)) {
+    $projectVersion = "0.0.0"
+}
+
+$effectiveVersion = if (-not [string]::IsNullOrWhiteSpace($Version)) { $Version } else { $projectVersion }
+if ([string]::IsNullOrWhiteSpace($effectiveVersion)) {
+    $effectiveVersion = "0.0.0"
+}
+
+$packageBaseName = "PartyWingBuffTools-Portable-v$effectiveVersion"
+if ([string]::IsNullOrWhiteSpace($ZipName)) {
+    $ZipName = "$packageBaseName.zip"
+}
+
+$staging = Join-Path $distRoot $packageBaseName
 $zipPath = Join-Path $distRoot $ZipName
 
-Write-Host "Cleaning PartyWingBuffTools build outputs and dist..."
+Write-Host "Cleaning PartyWingBuffTools build outputs and dist... (version $effectiveVersion)"
 foreach ($p in @(
         (Join-Path $root "bin"),
         (Join-Path $root "obj")
@@ -28,7 +46,7 @@ New-Item -ItemType Directory -Path $distRoot -Force | Out-Null
 Write-Host "Building Release (x86, win-x86)..."
 Push-Location $repoRoot
 try {
-    dotnet build (Join-Path $root "PartyWingBuffTools.csproj") -c Release -p:Platform=x86 -r win-x86
+    dotnet build (Join-Path $root "PartyWingBuffTools.csproj") -c Release -p:Platform=x86 -p:Version=$effectiveVersion -r win-x86
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 finally {
