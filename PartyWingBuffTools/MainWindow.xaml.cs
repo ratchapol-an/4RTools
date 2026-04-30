@@ -31,6 +31,7 @@ public sealed partial class MainWindow : Window
 
     private readonly RagnarokProcessService _processService = new();
     private readonly KeyDispatchService _keyDispatchService = new();
+    private readonly GlobalHotkeyService _globalHotkeyService = new();
     private readonly PartyBuffScheduler _scheduler = new();
     private readonly List<RagnarokProcessInfo> _availableProcesses = new();
     private readonly List<TriggerDefinition> _triggers = new();
@@ -53,6 +54,8 @@ public sealed partial class MainWindow : Window
     private readonly CancellationTokenSource _logWriterCts = new();
     private Task? _logWriterTask;
     private readonly string _appVersion;
+    private string _toggleHotkey = "PGDN";
+    private DateTimeOffset _ignoreGlobalHotkeyUntilUtc = DateTimeOffset.MinValue;
 
     private ComboBox _archbishopProcessComboBox = null!;
     private TextBlock _archbishopCharacterText = null!;
@@ -60,6 +63,8 @@ public sealed partial class MainWindow : Window
     private TextBlock _statusText = null!;
     private Button _startButton = null!;
     private Button _stopButton = null!;
+    private TextBox _toggleHotkeyTextBox = null!;
+    private CheckBox _audioCueCheckBox = null!;
     private StackPanel _triggerRowsHost = null!;
     private StackPanel _memberRowsHost = null!;
     private TextBlock _memberEditorTitle = null!;
@@ -92,9 +97,11 @@ public sealed partial class MainWindow : Window
         LoadSupportedProcessNames();
         RefreshProcesses();
         _logWriterTask = Task.Run(() => RunLogWriterAsync(_logWriterCts.Token));
+        InitializeGlobalHotkey();
         Closed += (_, _) =>
         {
             SaveProfile(_currentProfileName, logResult: false);
+            _globalHotkeyService.Dispose();
             StopLogWriter();
         };
     }
@@ -180,6 +187,30 @@ public sealed partial class MainWindow : Window
         _startButton.Click += async (_, _) => await StartSchedulerAsync();
         _stopButton = new Button { Content = "■ Stop", IsEnabled = false };
         _stopButton.Click += (_, _) => _runCts?.Cancel();
+        _toggleHotkeyTextBox = new TextBox { Text = _toggleHotkey, IsReadOnly = true, Width = 70, HorizontalAlignment = HorizontalAlignment.Left };
+        _toggleHotkeyTextBox.KeyDown += (_, e) =>
+        {
+            string token = ConvertVirtualKeyToToken(e.Key);
+            if (token is "Back" or "Esc")
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (ApplyGlobalToggleHotkey(token, logResult: true))
+            {
+                _toggleHotkeyTextBox.Text = _toggleHotkey;
+                // Ignore this same key press so setting a hotkey never toggles immediately.
+                _ignoreGlobalHotkeyUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
+            }
+            else
+            {
+                AppendLog($"Unsupported toggle key '{token}'.");
+            }
+
+            e.Handled = true;
+        };
+        _audioCueCheckBox = new CheckBox { Content = "Audio cue", IsChecked = true, VerticalAlignment = VerticalAlignment.Center };
         _statusText = new TextBlock { Text = "Status: Idle", VerticalAlignment = VerticalAlignment.Center };
         topActions.Children.Add(refreshButton);
         topActions.Children.Add(new TextBlock { Text = "Profile:", VerticalAlignment = VerticalAlignment.Center });
@@ -187,6 +218,9 @@ public sealed partial class MainWindow : Window
         topActions.Children.Add(saveProfileButton);
         topActions.Children.Add(_startButton);
         topActions.Children.Add(_stopButton);
+        topActions.Children.Add(new TextBlock { Text = "Toggle key:", VerticalAlignment = VerticalAlignment.Center });
+        topActions.Children.Add(_toggleHotkeyTextBox);
+        topActions.Children.Add(_audioCueCheckBox);
         topActions.Children.Add(_statusText);
         Grid.SetRow(topActions, 0);
         rightRoot.Children.Add(topActions);
@@ -221,6 +255,72 @@ public sealed partial class MainWindow : Window
         ShowPanel("run");
 
         _archbishopProcessComboBox.SelectionChanged += (_, _) => UpdateArchbishopCharacterPreview();
+    }
+
+    private void InitializeGlobalHotkey()
+    {
+        _globalHotkeyService.HotkeyPressed += OnGlobalHotkeyPressed;
+        if (!ApplyGlobalToggleHotkey(_toggleHotkey, logResult: false))
+        {
+            _toggleHotkey = "PGDN";
+            _globalHotkeyService.TrySetHotkeyToken(_toggleHotkey);
+        }
+
+        _globalHotkeyService.Enable();
+        AppendLog($"Global toggle key ready: {_toggleHotkey}.");
+    }
+
+    private void OnGlobalHotkeyPressed()
+    {
+        if (DateTimeOffset.UtcNow < _ignoreGlobalHotkeyUntilUtc)
+        {
+            return;
+        }
+
+        _ = DispatcherQueue.TryEnqueue(async () =>
+        {
+            if (_runCts is null)
+            {
+                await StartSchedulerAsync();
+                return;
+            }
+
+            _runCts.Cancel();
+        });
+    }
+
+    private bool ApplyGlobalToggleHotkey(string token, bool logResult)
+    {
+        string normalized = token.Trim().ToUpperInvariant();
+        if (!_globalHotkeyService.TrySetHotkeyToken(normalized))
+        {
+            return false;
+        }
+
+        _toggleHotkey = normalized;
+        if (logResult)
+        {
+            AppendLog($"Global toggle key set to {_toggleHotkey}.");
+        }
+
+        return true;
+    }
+
+    private void PlayToggleSound(bool isOn)
+    {
+        if (_audioCueCheckBox.IsChecked != true)
+        {
+            return;
+        }
+
+        try
+        {
+            Console.Beep(isOn ? 1200 : 700, 140);
+        }
+        catch
+        {
+            // no-op on environments that do not support beep
+        }
     }
 
     private Grid BuildRunPanel()
@@ -785,6 +885,7 @@ public sealed partial class MainWindow : Window
         _stopButton.IsEnabled = true;
         _statusText.Text = "Status: Running";
         AppendLog("Scheduler started.");
+        PlayToggleSound(isOn: true);
         try
         {
             await RunLoopAsync(_runCts.Token);
@@ -802,6 +903,7 @@ public sealed partial class MainWindow : Window
             _stopButton.IsEnabled = false;
             _statusText.Text = "Status: Idle";
             AppendLog("Scheduler stopped.");
+            PlayToggleSound(isOn: false);
         }
     }
 
@@ -1227,6 +1329,8 @@ public sealed partial class MainWindow : Window
             Windows.System.VirtualKey.Down => "DOWN",
             Windows.System.VirtualKey.Left => "LEFT",
             Windows.System.VirtualKey.Right => "RIGHT",
+            Windows.System.VirtualKey.PageUp => "PGUP",
+            Windows.System.VirtualKey.PageDown => "PGDN",
             Windows.System.VirtualKey.Tab => "TAB",
             Windows.System.VirtualKey.Space => "SPACE",
             _ => key.ToString().ToUpperInvariant(),
@@ -1832,6 +1936,8 @@ public sealed partial class MainWindow : Window
                 ServerProcessName = _serverProcessNameTextBox.Text.Trim(),
                 HpAddressHex = _hpAddressTextBox.Text.Trim(),
                 NameAddressHex = _nameAddressTextBox.Text.Trim(),
+                ToggleHotkey = _toggleHotkey,
+                EnableAudioCue = _audioCueCheckBox.IsChecked == true,
                 ArchbishopProcessId = _archbishopProcessComboBox.SelectedValue as int?,
                 Triggers = _triggers.Select(t => new TriggerProfile
                 {
@@ -1904,6 +2010,10 @@ public sealed partial class MainWindow : Window
             _serverProcessNameTextBox.Text = profile.ServerProcessName ?? DefaultExecutableName;
             _hpAddressTextBox.Text = string.IsNullOrWhiteSpace(profile.HpAddressHex) ? DefaultHpAddressHex : profile.HpAddressHex;
             _nameAddressTextBox.Text = string.IsNullOrWhiteSpace(profile.NameAddressHex) ? DefaultNameAddressHex : profile.NameAddressHex;
+            _toggleHotkey = string.IsNullOrWhiteSpace(profile.ToggleHotkey) ? "PGDN" : profile.ToggleHotkey;
+            _ = ApplyGlobalToggleHotkey(_toggleHotkey, logResult: false);
+            _toggleHotkeyTextBox.Text = _toggleHotkey;
+            _audioCueCheckBox.IsChecked = profile.EnableAudioCue;
             _pendingArchbishopProcessId = profile.ArchbishopProcessId;
 
             _triggers.Clear();
@@ -2011,6 +2121,8 @@ public sealed partial class MainWindow : Window
         public string? ServerProcessName { get; set; }
         public string? HpAddressHex { get; set; }
         public string? NameAddressHex { get; set; }
+        public string? ToggleHotkey { get; set; }
+        public bool EnableAudioCue { get; set; } = true;
         public int? ArchbishopProcessId { get; set; }
         public List<TriggerProfile> Triggers { get; set; } = new();
     }
