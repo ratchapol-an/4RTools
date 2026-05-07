@@ -301,7 +301,6 @@ public sealed class KeyDispatchService
 
         return normalized switch
         {
-            "SPACE" => 0x20,
             _ => 0,
         };
     }
