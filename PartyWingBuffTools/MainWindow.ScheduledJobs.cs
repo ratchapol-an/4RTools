@@ -108,7 +108,7 @@ public sealed partial class MainWindow
             {
                 Id = Guid.NewGuid().ToString("N"),
                 Name = $"Action{_scheduledActions.Count + 1}",
-                Steps = new List<ScheduledActionStep> { new() { KeyText = string.Empty, DelayText = "250" } },
+                Steps = new List<ScheduledActionStep> { new() { StepType = "KEY", KeyText = string.Empty, DelayText = "250" } },
             });
             SaveScheduledJobsToDisk();
             RenderScheduledActions();
@@ -428,16 +428,35 @@ public sealed partial class MainWindow
         for (int i = 0; i < action.Steps.Count; i++)
         {
             ScheduledActionStep step = action.Steps[i];
-            string key = (step.KeyText ?? string.Empty).Trim().ToUpperInvariant();
-            if (string.IsNullOrWhiteSpace(key))
+            string stepType = NormalizeStepType(step.StepType);
+            bool sent;
+            string logAction;
+            if (stepType == "MOUSE")
             {
-                continue;
+                if (!TryResolveMousePoint(step.MousePointId, out double x, out double y))
+                {
+                    await AppendScheduledLogAsync($"[{execId}] Scheduled mouse point missing -> {processId} ({action.Name}) step {i + 1}/{action.Steps.Count}");
+                    continue;
+                }
+
+                sent = _keyDispatchService.SendMouseClickNormalized(processId, x, y);
+                logAction = $"mouse({x:0.###},{y:0.###})";
+            }
+            else
+            {
+                string key = (step.KeyText ?? string.Empty).Trim().ToUpperInvariant();
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    continue;
+                }
+
+                sent = _keyDispatchService.SendKey(processId, key);
+                logAction = $"key {key}";
             }
 
-            bool sent = _keyDispatchService.SendKey(processId, key);
             await AppendScheduledLogAsync(sent
-                ? $"[{execId}] Scheduled key {key} -> {processId} ({action.Name}) step {i + 1}/{action.Steps.Count}"
-                : $"[{execId}] Scheduled key failed {key} -> {processId} ({action.Name}) step {i + 1}/{action.Steps.Count}");
+                ? $"[{execId}] Scheduled {logAction} -> {processId} ({action.Name}) step {i + 1}/{action.Steps.Count}"
+                : $"[{execId}] Scheduled {logAction} failed -> {processId} ({action.Name}) step {i + 1}/{action.Steps.Count}");
 
             int delay = 250;
             if (int.TryParse(step.DelayText, out int parsed))
@@ -491,7 +510,7 @@ public sealed partial class MainWindow
             var addStepButton = new Button { Content = "+ Step" };
             addStepButton.Click += (_, _) =>
             {
-                action.Steps.Add(new ScheduledActionStep { KeyText = string.Empty, DelayText = "250" });
+                action.Steps.Add(new ScheduledActionStep { StepType = "KEY", KeyText = string.Empty, DelayText = "250" });
                 SaveScheduledJobsToDisk();
                 RenderScheduledActions();
             };
@@ -502,7 +521,7 @@ public sealed partial class MainWindow
                 {
                     Id = Guid.NewGuid().ToString("N"),
                     Name = string.IsNullOrWhiteSpace(action.Name) ? $"Action{_scheduledActions.Count + 1}" : $"{action.Name} Copy",
-                    Steps = action.Steps.Select(s => new ScheduledActionStep { KeyText = s.KeyText, DelayText = s.DelayText }).ToList(),
+                    Steps = action.Steps.Select(s => new ScheduledActionStep { StepType = NormalizeStepType(s.StepType), KeyText = s.KeyText, MousePointId = s.MousePointId, DelayText = s.DelayText }).ToList(),
                 });
                 SaveScheduledJobsToDisk();
                 RenderScheduledActions();
@@ -531,15 +550,40 @@ public sealed partial class MainWindow
 
             if (action.Steps.Count == 0)
             {
-                action.Steps.Add(new ScheduledActionStep { KeyText = string.Empty, DelayText = "250" });
+                action.Steps.Add(new ScheduledActionStep { StepType = "KEY", KeyText = string.Empty, DelayText = "250" });
             }
 
             foreach (ScheduledActionStep step in action.Steps.ToList())
             {
                 var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6 };
+                var stepTypeCombo = new ComboBox { Width = 90, ItemsSource = new[] { "KEY", "MOUSE" }, SelectedItem = NormalizeStepType(step.StepType) };
                 var keyBox = new TextBox { Text = step.KeyText, PlaceholderText = "Key", Width = 110, IsReadOnly = true };
+                var pointCombo = new ComboBox { Width = 170, DisplayMemberPath = "Name", SelectedValuePath = "Id", ItemsSource = _mousePoints, SelectedValue = step.MousePointId };
+                void applyStepUiState()
+                {
+                    bool isKey = NormalizeStepType(step.StepType) == "KEY";
+                    keyBox.Visibility = isKey ? Visibility.Visible : Visibility.Collapsed;
+                    pointCombo.Visibility = isKey ? Visibility.Collapsed : Visibility.Visible;
+                }
+                stepTypeCombo.SelectionChanged += (_, _) =>
+                {
+                    step.StepType = NormalizeStepType(stepTypeCombo.SelectedItem?.ToString());
+                    SaveScheduledJobsToDisk();
+                    applyStepUiState();
+                };
+                pointCombo.SelectionChanged += (_, _) =>
+                {
+                    step.MousePointId = pointCombo.SelectedValue?.ToString() ?? string.Empty;
+                    SaveScheduledJobsToDisk();
+                };
                 keyBox.KeyDown += (_, e) =>
                 {
+                    if (NormalizeStepType(step.StepType) != "KEY")
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
                     string token = ConvertVirtualKeyToToken(e.Key);
                     if (token == "Esc")
                     {
@@ -575,9 +619,12 @@ public sealed partial class MainWindow
                     RenderScheduledActions();
                 };
                 row.Children.Add(new TextBlock { Text = "Step:", VerticalAlignment = VerticalAlignment.Center });
+                row.Children.Add(stepTypeCombo);
                 row.Children.Add(keyBox);
+                row.Children.Add(pointCombo);
                 row.Children.Add(delayBox);
                 row.Children.Add(removeStepButton);
+                applyStepUiState();
                 host.Children.Add(row);
             }
 
@@ -886,6 +933,19 @@ public sealed partial class MainWindow
             }
         }
 
+        foreach (ScheduledActionDefinition action in _scheduledActions)
+        {
+            action.Id = string.IsNullOrWhiteSpace(action.Id) ? Guid.NewGuid().ToString("N") : action.Id;
+            action.Steps ??= new List<ScheduledActionStep>();
+            foreach (ScheduledActionStep step in action.Steps)
+            {
+                step.StepType = NormalizeStepType(step.StepType);
+                step.KeyText ??= string.Empty;
+                step.MousePointId ??= string.Empty;
+                step.DelayText = string.IsNullOrWhiteSpace(step.DelayText) ? "250" : step.DelayText;
+            }
+        }
+
         RecomputeNextScheduledRuns();
     }
 
@@ -1003,7 +1063,9 @@ public sealed partial class MainWindow
 
     private sealed class ScheduledActionStep
     {
+        public string StepType { get; set; } = "KEY";
         public string KeyText { get; set; } = string.Empty;
+        public string MousePointId { get; set; } = string.Empty;
         public string DelayText { get; set; } = "250";
     }
 

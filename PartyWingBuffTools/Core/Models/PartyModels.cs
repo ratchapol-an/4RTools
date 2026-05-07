@@ -19,12 +19,24 @@ public sealed class MemberSequenceConfig
 
     public required string CharacterLabel { get; init; }
 
-    public required IReadOnlyList<KeyStepConfig> KeySequence { get; init; }
+    public required IReadOnlyList<ActionStepConfig> Steps { get; init; }
 }
 
-public sealed class KeyStepConfig
+public enum ActionStepType
 {
-    public required string Key { get; init; }
+    Key = 0,
+    MouseClick = 1,
+}
+
+public sealed class ActionStepConfig
+{
+    public required ActionStepType Type { get; init; }
+
+    public string? Key { get; init; }
+
+    public double? NormalizedX { get; init; }
+
+    public double? NormalizedY { get; init; }
 
     public required int DelayAfterMs { get; init; }
 }
@@ -53,7 +65,13 @@ public sealed class DispatchAction
 {
     public required int ProcessId { get; init; }
 
-    public required string Key { get; init; }
+    public required ActionStepType Type { get; init; }
+
+    public string? Key { get; init; }
+
+    public double? NormalizedX { get; init; }
+
+    public double? NormalizedY { get; init; }
 
     public required string Reason { get; init; }
 

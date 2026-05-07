@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<TriggerDefinition, TextBlock> _triggerIndicatorByTrigger = new();
     private readonly Dictionary<string, IReadOnlyList<Control>> _stepVisualsByReason = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextBlock> _stepIndicatorByReason = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<MousePointDefinition> _mousePoints = new();
     private TriggerDefinition? _selectedTrigger;
     private CancellationTokenSource? _runCts;
     private int? _pendingArchbishopProcessId;
@@ -74,9 +75,13 @@ public sealed partial class MainWindow : Window
     private StackPanel _logsPanel = null!;
     private StackPanel _profilesPanel = null!;
     private FrameworkElement _scheduledJobsPanel = null!;
+    private StackPanel _mousePointsPanel = null!;
+    private StackPanel _mousePointsHost = null!;
+    private ComboBox _mousePointTestProcessComboBox = null!;
     private TextBox _serverProcessNameTextBox = null!;
     private TextBox _hpAddressTextBox = null!;
     private TextBox _nameAddressTextBox = null!;
+    private TextBox _mouseFocusSettleDelayTextBox = null!;
     private ComboBox _profileComboBox = null!;
     private TextBox _profileNameTextBox = null!;
     private Microsoft.UI.Xaml.Media.Brush _normalForegroundBrush = null!;
@@ -93,6 +98,7 @@ public sealed partial class MainWindow : Window
         BuildUi();
         AppWindow.Resize(new SizeInt32(StartupWindowWidth, StartupWindowHeight));
         InitializeExecutionIndicatorBrushes();
+        EnsureDefaultMousePoints();
         EnsureDefaultProfileExists();
         RefreshProfileList(selectProfileName: DefaultProfileName);
         LoadProfile(_currentProfileName, logResult: false);
@@ -145,16 +151,19 @@ public sealed partial class MainWindow : Window
         var profilesNavButton = new Button { Content = "👤 Profiles", HorizontalAlignment = HorizontalAlignment.Stretch };
         var logsNavButton = new Button { Content = "📝 Logs", HorizontalAlignment = HorizontalAlignment.Stretch };
         var schedulesNavButton = new Button { Content = "⏰ Scheduled Jobs", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var mousePointsNavButton = new Button { Content = "🖱 Mouse Points", HorizontalAlignment = HorizontalAlignment.Stretch };
         runNavButton.Click += (_, _) => ShowPanel("run");
         settingsNavButton.Click += (_, _) => ShowPanel("settings");
         profilesNavButton.Click += (_, _) => ShowPanel("profiles");
         logsNavButton.Click += (_, _) => ShowPanel("logs");
         schedulesNavButton.Click += (_, _) => ShowPanel("scheduled");
+        mousePointsNavButton.Click += (_, _) => ShowPanel("mouse-points");
         navItems.Children.Add(runNavButton);
         navItems.Children.Add(settingsNavButton);
         navItems.Children.Add(profilesNavButton);
         navItems.Children.Add(logsNavButton);
         navItems.Children.Add(schedulesNavButton);
+        navItems.Children.Add(mousePointsNavButton);
         Grid.SetRow(navItems, 1);
         leftNav.Children.Add(navItems);
 
@@ -221,6 +230,10 @@ public sealed partial class MainWindow : Window
         _scheduledJobsPanel = BuildScheduledJobsPanel();
         _scheduledJobsPanel.Visibility = Visibility.Collapsed;
         contentHost.Children.Add(_scheduledJobsPanel);
+
+        _mousePointsPanel = BuildMousePointsPanel();
+        _mousePointsPanel.Visibility = Visibility.Collapsed;
+        contentHost.Children.Add(_mousePointsPanel);
 
         Grid.SetColumn(rightRoot, 1);
         host.Children.Add(rightRoot);
@@ -392,12 +405,16 @@ public sealed partial class MainWindow : Window
         _serverProcessNameTextBox = new TextBox { Text = DefaultExecutableName };
         _hpAddressTextBox = new TextBox { Text = DefaultHpAddressHex };
         _nameAddressTextBox = new TextBox { Text = DefaultNameAddressHex };
+        _mouseFocusSettleDelayTextBox = new TextBox { Text = _keyDispatchService.FocusSettleDelayMs.ToString(), Width = 120 };
+        _mouseFocusSettleDelayTextBox.TextChanged += (_, _) => ApplyMouseFocusSettleDelayFromSettings(logResult: false);
         settings.Children.Add(new TextBlock { Text = "🎯 Ragnarok Executable Name", FontWeight = FontWeights.Bold, FontSize = 15 });
         settings.Children.Add(_serverProcessNameTextBox);
         settings.Children.Add(new TextBlock { Text = "❤ HP Address (hex)", FontWeight = FontWeights.SemiBold });
         settings.Children.Add(_hpAddressTextBox);
         settings.Children.Add(new TextBlock { Text = "🏷 Name Address (hex)", FontWeight = FontWeights.SemiBold });
         settings.Children.Add(_nameAddressTextBox);
+        settings.Children.Add(new TextBlock { Text = "🖱 Mouse Focus Settle Delay (ms)", FontWeight = FontWeights.SemiBold });
+        settings.Children.Add(_mouseFocusSettleDelayTextBox);
         var debugButton = new Button { Content = "Debug Selected Process Name Read" };
         debugButton.Click += (_, _) => RunDebugForSelectedProcess();
         settings.Children.Add(debugButton);
@@ -550,7 +567,7 @@ public sealed partial class MainWindow : Window
         header.Children.Add(HeaderText("Active", 0));
         header.Children.Add(HeaderText("Role/Label", 1));
         header.Children.Add(HeaderText("Process", 2));
-        header.Children.Add(HeaderText("Key Steps", 3));
+        header.Children.Add(HeaderText("Steps", 3));
         header.Children.Add(HeaderText("Remove", 4));
         Grid.SetRow(header, 1);
         wrapper.Children.Add(header);
@@ -682,9 +699,9 @@ public sealed partial class MainWindow : Window
             IsActive = true,
             Label = string.Empty,
             ProcessIdText = string.Empty,
-            KeySteps = new List<KeyStepDefinition>
+            Steps = new List<ActionStepDefinition>
             {
-                new() { KeyText = string.Empty, DelayText = "250" },
+                new() { StepType = "KEY", KeyText = string.Empty, DelayText = "250" },
             },
         });
         RenderMembers();
@@ -708,7 +725,7 @@ public sealed partial class MainWindow : Window
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(420) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var activeCheck = new CheckBox { IsChecked = member.IsActive, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
@@ -722,17 +739,19 @@ public sealed partial class MainWindow : Window
             var stepsHost = new StackPanel { Spacing = 4 };
             var addStepButton = new Button { Content = "+ Step", HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 72 };
 
-            if (member.KeySteps.Count == 0)
+            if (member.Steps.Count == 0)
             {
-                member.KeySteps.Add(new KeyStepDefinition { KeyText = string.Empty, DelayText = "250" });
+                member.Steps.Add(new ActionStepDefinition { StepType = "KEY", KeyText = string.Empty, DelayText = "250" });
             }
 
-            for (int stepIndex = 0; stepIndex < member.KeySteps.Count; stepIndex++)
+            for (int stepIndex = 0; stepIndex < member.Steps.Count; stepIndex++)
             {
-                KeyStepDefinition step = member.KeySteps[stepIndex];
+                ActionStepDefinition step = member.Steps[stepIndex];
                 var stepGrid = new Grid { ColumnSpacing = 4 };
                 stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
                 stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+                stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
                 stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
                 stepGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -745,14 +764,42 @@ public sealed partial class MainWindow : Window
                     Foreground = _executingForegroundBrush,
                     FontWeight = FontWeights.Bold,
                 };
+                var typeCombo = new ComboBox
+                {
+                    Width = 86,
+                    ItemsSource = new[] { "KEY", "MOUSE" },
+                    SelectedItem = NormalizeStepType(step.StepType),
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                };
                 var stepKeyBox = new TextBox { Text = step.KeyText, PlaceholderText = "Key", IsReadOnly = true, Width = 76, HorizontalAlignment = HorizontalAlignment.Left };
+                var pointCombo = new ComboBox { Width = 146, DisplayMemberPath = "Name", SelectedValuePath = "Id", ItemsSource = _mousePoints, HorizontalAlignment = HorizontalAlignment.Left };
+                pointCombo.SelectedValue = step.MousePointId;
                 var stepDelayBox = new TextBox { Text = step.DelayText, PlaceholderText = "250", Width = 76, HorizontalAlignment = HorizontalAlignment.Left };
                 var removeStepButton = new Button { Content = "-", MinWidth = 34 };
 
+                void applyStepUiState()
+                {
+                    bool isKey = NormalizeStepType(step.StepType) == "KEY";
+                    stepKeyBox.Visibility = isKey ? Visibility.Visible : Visibility.Collapsed;
+                    pointCombo.Visibility = isKey ? Visibility.Collapsed : Visibility.Visible;
+                }
+
+                typeCombo.SelectionChanged += (_, _) =>
+                {
+                    step.StepType = NormalizeStepType(typeCombo.SelectedItem?.ToString());
+                    applyStepUiState();
+                };
                 stepKeyBox.TextChanged += (_, _) => step.KeyText = stepKeyBox.Text;
+                pointCombo.SelectionChanged += (_, _) => step.MousePointId = pointCombo.SelectedValue?.ToString() ?? string.Empty;
                 stepDelayBox.TextChanged += (_, _) => step.DelayText = stepDelayBox.Text;
                 stepKeyBox.KeyDown += (_, e) =>
                 {
+                    if (NormalizeStepType(step.StepType) != "KEY")
+                    {
+                        e.Handled = true;
+                        return;
+                    }
+
                     string token = ConvertVirtualKeyToToken(e.Key);
                     if (token == "Back")
                     {
@@ -772,18 +819,23 @@ public sealed partial class MainWindow : Window
                 };
                 removeStepButton.Click += (_, _) =>
                 {
-                    member.KeySteps.Remove(step);
+                    member.Steps.Remove(step);
                     RenderMembers();
                 };
 
                 Grid.SetColumn(stepIndicator, 0);
-                Grid.SetColumn(stepKeyBox, 1);
-                Grid.SetColumn(stepDelayBox, 2);
-                Grid.SetColumn(removeStepButton, 3);
+                Grid.SetColumn(typeCombo, 1);
+                Grid.SetColumn(stepKeyBox, 2);
+                Grid.SetColumn(pointCombo, 3);
+                Grid.SetColumn(stepDelayBox, 4);
+                Grid.SetColumn(removeStepButton, 5);
                 stepGrid.Children.Add(stepIndicator);
+                stepGrid.Children.Add(typeCombo);
                 stepGrid.Children.Add(stepKeyBox);
+                stepGrid.Children.Add(pointCombo);
                 stepGrid.Children.Add(stepDelayBox);
                 stepGrid.Children.Add(removeStepButton);
+                applyStepUiState();
                 stepsHost.Children.Add(stepGrid);
 
                 if (int.TryParse(member.ProcessIdText, out int processId))
@@ -797,7 +849,7 @@ public sealed partial class MainWindow : Window
 
             addStepButton.Click += (_, _) =>
             {
-                member.KeySteps.Add(new KeyStepDefinition { KeyText = string.Empty, DelayText = "250" });
+                member.Steps.Add(new ActionStepDefinition { StepType = "KEY", KeyText = string.Empty, DelayText = "250" });
                 RenderMembers();
             };
             stepsHost.Children.Add(addStepButton);
@@ -862,6 +914,15 @@ public sealed partial class MainWindow : Window
         _pendingArchbishopProcessId = null;
         RenderMembers();
         RefreshScheduledJobsProcessOptions();
+        if (_mousePointTestProcessComboBox is not null)
+        {
+            _mousePointTestProcessComboBox.ItemsSource = null;
+            _mousePointTestProcessComboBox.ItemsSource = _availableProcesses;
+            if (_availableProcesses.Count > 0 && _mousePointTestProcessComboBox.SelectedIndex < 0)
+            {
+                _mousePointTestProcessComboBox.SelectedIndex = 0;
+            }
+        }
         UpdateArchbishopCharacterPreview();
         AppendLog($"Detected {_availableProcesses.Count} Ragnarok client(s).");
     }
@@ -972,24 +1033,43 @@ public sealed partial class MainWindow : Window
                     continue;
                 }
 
-                List<KeyStepConfig> steps = new();
-                foreach (KeyStepDefinition step in member.KeySteps)
+                List<ActionStepConfig> steps = new();
+                foreach (ActionStepDefinition step in member.Steps)
                 {
-                    string keyToken = step.KeyText.Trim();
-                    if (string.IsNullOrWhiteSpace(keyToken))
-                    {
-                        continue;
-                    }
-
                     int delayMs = 250;
                     if (int.TryParse(step.DelayText.Trim(), out int parsedDelay))
                     {
                         delayMs = Math.Max(0, parsedDelay);
                     }
 
-                    steps.Add(new KeyStepConfig
+                    string stepType = NormalizeStepType(step.StepType);
+                    if (stepType == "KEY")
                     {
-                        Key = keyToken.ToUpperInvariant(),
+                        string keyToken = step.KeyText.Trim();
+                        if (string.IsNullOrWhiteSpace(keyToken))
+                        {
+                            continue;
+                        }
+
+                        steps.Add(new ActionStepConfig
+                        {
+                            Type = ActionStepType.Key,
+                            Key = keyToken.ToUpperInvariant(),
+                            DelayAfterMs = delayMs,
+                        });
+                        continue;
+                    }
+
+                    if (!TryResolveMousePoint(step.MousePointId, out double x, out double y))
+                    {
+                        continue;
+                    }
+
+                    steps.Add(new ActionStepConfig
+                    {
+                        Type = ActionStepType.MouseClick,
+                        NormalizedX = x,
+                        NormalizedY = y,
                         DelayAfterMs = delayMs,
                     });
                 }
@@ -1003,7 +1083,7 @@ public sealed partial class MainWindow : Window
                 {
                     ProcessId = pid,
                     CharacterLabel = string.IsNullOrWhiteSpace(member.Label) ? $"Process {pid}" : member.Label,
-                    KeySequence = steps,
+                    Steps = steps,
                 });
             }
 
@@ -1109,10 +1189,10 @@ public sealed partial class MainWindow : Window
         DispatchAction? teleportAction = plan.Actions.FirstOrDefault(a => a.Reason.EndsWith(":Teleport", StringComparison.OrdinalIgnoreCase));
         if (teleportAction is not null)
         {
-            bool sent = _keyDispatchService.SendKey(teleportAction.ProcessId, teleportAction.Key);
+            bool sent = ExecuteDispatchAction(teleportAction);
             AppendLog(sent
-                ? $"Key {teleportAction.Key} -> {teleportAction.ProcessId} ({teleportAction.Reason})"
-                : $"Failed {teleportAction.Key} -> {teleportAction.ProcessId} ({teleportAction.Reason})");
+                ? $"{FormatActionForLog(teleportAction)} -> {teleportAction.ProcessId} ({teleportAction.Reason})"
+                : $"Failed {FormatActionForLog(teleportAction)} -> {teleportAction.ProcessId} ({teleportAction.Reason})");
 
             if (teleportAction.DelayAfterMs > 0)
             {
@@ -1151,10 +1231,10 @@ public sealed partial class MainWindow : Window
             await SetStepExecutingVisualAsync(action.Reason, isExecuting: true);
             try
             {
-                bool sent = _keyDispatchService.SendKey(action.ProcessId, action.Key);
+                bool sent = ExecuteDispatchAction(action);
                 AppendLog(sent
-                    ? $"Key {action.Key} -> {action.ProcessId} ({action.Reason})"
-                    : $"Failed {action.Key} -> {action.ProcessId} ({action.Reason})");
+                    ? $"{FormatActionForLog(action)} -> {action.ProcessId} ({action.Reason})"
+                    : $"Failed {FormatActionForLog(action)} -> {action.ProcessId} ({action.Reason})");
 
                 if (action.DelayAfterMs > 0)
                 {
@@ -1166,6 +1246,28 @@ public sealed partial class MainWindow : Window
                 await SetStepExecutingVisualAsync(action.Reason, isExecuting: false);
             }
         }
+    }
+
+    private bool ExecuteDispatchAction(DispatchAction action)
+    {
+        if (action.Type == ActionStepType.MouseClick && action.NormalizedX.HasValue && action.NormalizedY.HasValue)
+        {
+            return _keyDispatchService.SendMouseClickNormalized(action.ProcessId, action.NormalizedX.Value, action.NormalizedY.Value);
+        }
+
+        return !string.IsNullOrWhiteSpace(action.Key) && _keyDispatchService.SendKey(action.ProcessId, action.Key);
+    }
+
+    private static string FormatActionForLog(DispatchAction action)
+    {
+        if (action.Type == ActionStepType.MouseClick)
+        {
+            return action.NormalizedX.HasValue && action.NormalizedY.HasValue
+                ? $"Mouse({action.NormalizedX.Value:0.###},{action.NormalizedY.Value:0.###})"
+                : "Mouse(?)";
+        }
+
+        return $"Key {action.Key}";
     }
 
     private string GetMemberReasonLabel(MemberDefinition member, int processId)
@@ -1182,6 +1284,11 @@ public sealed partial class MainWindow : Window
     {
         int idx = reason.LastIndexOf(":Step", StringComparison.OrdinalIgnoreCase);
         return idx > 0 ? reason[..idx] : reason;
+    }
+
+    private static string NormalizeStepType(string? stepType)
+    {
+        return string.Equals(stepType, "MOUSE", StringComparison.OrdinalIgnoreCase) ? "MOUSE" : "KEY";
     }
 
     private void InitializeExecutionIndicatorBrushes()
@@ -1304,6 +1411,176 @@ public sealed partial class MainWindow : Window
         return hasHp && hasName;
     }
 
+    private bool ApplyMouseFocusSettleDelayFromSettings(bool logResult)
+    {
+        if (!int.TryParse(_mouseFocusSettleDelayTextBox.Text.Trim(), out int delay))
+        {
+            if (logResult)
+            {
+                AppendLog("Invalid mouse focus settle delay. Use integer milliseconds.");
+            }
+
+            return false;
+        }
+
+        _keyDispatchService.FocusSettleDelayMs = Math.Max(0, delay);
+        return true;
+    }
+
+    private StackPanel BuildMousePointsPanel()
+    {
+        var panel = new StackPanel { Spacing = 10 };
+        panel.Children.Add(new TextBlock { Text = "🖱 Mouse Points", FontWeight = FontWeights.Bold, FontSize = 16 });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Define named click positions with normalized X/Y (0.0-1.0) relative to each Ragnarok client window.",
+            Opacity = 0.85,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var addButton = new Button { Content = "+ Add Point", HorizontalAlignment = HorizontalAlignment.Left };
+        _mousePointTestProcessComboBox = new ComboBox
+        {
+            Width = 260,
+            ItemsSource = _availableProcesses,
+            DisplayMemberPath = "DisplayName",
+            SelectedValuePath = "ProcessId",
+            PlaceholderText = "Select process for Test Click",
+        };
+        var controlRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        controlRow.Children.Add(addButton);
+        controlRow.Children.Add(new TextBlock { Text = "Test Process:", VerticalAlignment = VerticalAlignment.Center });
+        controlRow.Children.Add(_mousePointTestProcessComboBox);
+        addButton.Click += (_, _) =>
+        {
+            _mousePoints.Add(new MousePointDefinition
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = $"Point{_mousePoints.Count + 1}",
+                XText = "0.500",
+                YText = "0.500",
+            });
+            RenderMousePoints();
+        };
+        panel.Children.Add(controlRow);
+
+        _mousePointsHost = new StackPanel { Spacing = 8 };
+        var scroll = new ScrollViewer
+        {
+            Content = _mousePointsHost,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+        };
+        panel.Children.Add(scroll);
+        RenderMousePoints();
+        return panel;
+    }
+
+    private void RenderMousePoints()
+    {
+        if (_mousePointsHost is null)
+        {
+            return;
+        }
+
+        _mousePointsHost.Children.Clear();
+        foreach (MousePointDefinition point in _mousePoints.ToList())
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var nameBox = new TextBox { Text = point.Name, Width = 180, PlaceholderText = "Point name" };
+            var xBox = new TextBox { Text = point.XText, Width = 90, PlaceholderText = "X (0.0-1.0)" };
+            var yBox = new TextBox { Text = point.YText, Width = 90, PlaceholderText = "Y (0.0-1.0)" };
+            var testButton = new Button { Content = "Test Click" };
+            var remove = new Button { Content = "Delete" };
+            nameBox.TextChanged += (_, _) => point.Name = nameBox.Text;
+            xBox.TextChanged += (_, _) => point.XText = xBox.Text;
+            yBox.TextChanged += (_, _) => point.YText = yBox.Text;
+            testButton.Click += (_, _) =>
+            {
+                if (_mousePointTestProcessComboBox.SelectedValue is not int processId)
+                {
+                    AppendLog("Mouse test: select a process first.");
+                    return;
+                }
+
+                if (!TryResolveMousePoint(point.Id, out double x, out double y))
+                {
+                    AppendLog($"Mouse test: invalid point '{point.Name}'.");
+                    return;
+                }
+
+                bool sent = _keyDispatchService.SendMouseClickNormalized(processId, x, y);
+                AppendLog(sent
+                    ? $"Mouse test clicked '{point.Name}' ({x:0.###},{y:0.###}) -> {processId}"
+                    : $"Mouse test failed '{point.Name}' ({x:0.###},{y:0.###}) -> {processId}");
+            };
+            remove.Click += (_, _) =>
+            {
+                _mousePoints.Remove(point);
+                RenderMousePoints();
+                RenderMembers();
+                if (_scheduledJobsInitialized)
+                {
+                    RenderScheduledJobs();
+                }
+            };
+            row.Children.Add(new TextBlock { Text = "Name:", VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(nameBox);
+            row.Children.Add(new TextBlock { Text = "X:", VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(xBox);
+            row.Children.Add(new TextBlock { Text = "Y:", VerticalAlignment = VerticalAlignment.Center });
+            row.Children.Add(yBox);
+            row.Children.Add(testButton);
+            row.Children.Add(remove);
+            _mousePointsHost.Children.Add(row);
+        }
+    }
+
+    private void EnsureDefaultMousePoints()
+    {
+        if (_mousePoints.Count > 0)
+        {
+            return;
+        }
+
+        _mousePoints.Add(new MousePointDefinition
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = "Center",
+            XText = "0.500",
+            YText = "0.500",
+        });
+        _mousePoints.Add(new MousePointDefinition
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = "Exit Nova",
+            XText = "0.600",
+            YText = "0.400",
+        });
+    }
+
+    private bool TryResolveMousePoint(string pointId, out double x, out double y)
+    {
+        x = 0;
+        y = 0;
+        MousePointDefinition? point = _mousePoints.FirstOrDefault(p => string.Equals(p.Id, pointId, StringComparison.OrdinalIgnoreCase));
+        if (point is null)
+        {
+            return false;
+        }
+
+        bool hasX = double.TryParse(point.XText, out x);
+        bool hasY = double.TryParse(point.YText, out y);
+        if (!hasX || !hasY)
+        {
+            return false;
+        }
+
+        x = Math.Clamp(x, 0, 1);
+        y = Math.Clamp(y, 0, 1);
+        return true;
+    }
+
     private void ShowPanel(string panel)
     {
         if (panel == "scheduled" && !_scheduledJobsInitialized)
@@ -1326,6 +1603,7 @@ public sealed partial class MainWindow : Window
         _profilesPanel.Visibility = panel == "profiles" ? Visibility.Visible : Visibility.Collapsed;
         _logsPanel.Visibility = panel == "logs" ? Visibility.Visible : Visibility.Collapsed;
         _scheduledJobsPanel.Visibility = panel == "scheduled" ? Visibility.Visible : Visibility.Collapsed;
+        _mousePointsPanel.Visibility = panel == "mouse-points" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private string GetCharacterName(string processIdText)
@@ -1353,6 +1631,12 @@ public sealed partial class MainWindow : Window
         if (key is >= Windows.System.VirtualKey.Number0 and <= Windows.System.VirtualKey.Number9)
         {
             int value = (int)key - (int)Windows.System.VirtualKey.Number0;
+            return value.ToString();
+        }
+
+        if (key is >= Windows.System.VirtualKey.NumberPad0 and <= Windows.System.VirtualKey.NumberPad9)
+        {
+            int value = (int)key - (int)Windows.System.VirtualKey.NumberPad0;
             return value.ToString();
         }
 
@@ -1977,7 +2261,15 @@ public sealed partial class MainWindow : Window
                 NameAddressHex = _nameAddressTextBox.Text.Trim(),
                 ToggleHotkey = _toggleHotkey,
                 EnableAudioCue = _audioCueCheckBox.IsChecked == true,
+                MouseFocusSettleDelayMs = _keyDispatchService.FocusSettleDelayMs,
                 ArchbishopProcessId = _archbishopProcessComboBox.SelectedValue as int?,
+                MousePoints = _mousePoints.Select(p => new MousePointProfile
+                {
+                    Id = p.Id,
+                    Name = p.Name,
+                    XText = p.XText,
+                    YText = p.YText,
+                }).ToList(),
                 Triggers = _triggers.Select(t => new TriggerProfile
                 {
                     IsActive = t.IsActive,
@@ -1990,9 +2282,11 @@ public sealed partial class MainWindow : Window
                         IsActive = m.IsActive,
                         Label = m.Label,
                         ProcessIdText = m.ProcessIdText,
-                        KeySteps = m.KeySteps.Select(s => new KeyStepProfile
+                        Steps = m.Steps.Select(s => new StepProfile
                         {
+                            StepType = NormalizeStepType(s.StepType),
                             KeyText = s.KeyText,
+                            MousePointId = s.MousePointId,
                             DelayText = s.DelayText,
                         }).ToList(),
                     }).ToList(),
@@ -2053,7 +2347,22 @@ public sealed partial class MainWindow : Window
             _ = ApplyGlobalToggleHotkey(_toggleHotkey, logResult: false);
             _toggleHotkeyTextBox.Text = _toggleHotkey;
             _audioCueCheckBox.IsChecked = profile.EnableAudioCue;
+            _mouseFocusSettleDelayTextBox.Text = (profile.MouseFocusSettleDelayMs ?? _keyDispatchService.FocusSettleDelayMs).ToString();
+            _ = ApplyMouseFocusSettleDelayFromSettings(logResult: false);
             _pendingArchbishopProcessId = profile.ArchbishopProcessId;
+            _mousePoints.Clear();
+            foreach (MousePointProfile point in profile.MousePoints ?? new List<MousePointProfile>())
+            {
+                _mousePoints.Add(new MousePointDefinition
+                {
+                    Id = string.IsNullOrWhiteSpace(point.Id) ? Guid.NewGuid().ToString("N") : point.Id!,
+                    Name = string.IsNullOrWhiteSpace(point.Name) ? "Point" : point.Name!,
+                    XText = string.IsNullOrWhiteSpace(point.XText) ? "0.500" : point.XText!,
+                    YText = string.IsNullOrWhiteSpace(point.YText) ? "0.500" : point.YText!,
+                });
+            }
+            EnsureDefaultMousePoints();
+            RenderMousePoints();
 
             _triggers.Clear();
             _triggerRowsHost.Children.Clear();
@@ -2080,16 +2389,32 @@ public sealed partial class MainWindow : Window
                         IsActive = member.IsActive,
                         Label = member.Label ?? string.Empty,
                         ProcessIdText = member.ProcessIdText ?? string.Empty,
-                        KeySteps = member.KeySteps.Select(s => new KeyStepDefinition
+                        Steps = member.Steps.Select(s => new ActionStepDefinition
                         {
+                            StepType = NormalizeStepType(s.StepType),
                             KeyText = s.KeyText ?? string.Empty,
+                            MousePointId = s.MousePointId ?? string.Empty,
                             DelayText = string.IsNullOrWhiteSpace(s.DelayText) ? "250" : s.DelayText,
                         }).ToList(),
                     };
 
-                    if (mappedMember.KeySteps.Count == 0)
+                    if (mappedMember.Steps.Count == 0)
                     {
-                        mappedMember.KeySteps.Add(new KeyStepDefinition { KeyText = string.Empty, DelayText = "250" });
+                        // Backward compatibility for old key-only profiles.
+                        foreach (KeyStepProfile old in member.KeySteps)
+                        {
+                            mappedMember.Steps.Add(new ActionStepDefinition
+                            {
+                                StepType = "KEY",
+                                KeyText = old.KeyText ?? string.Empty,
+                                DelayText = string.IsNullOrWhiteSpace(old.DelayText) ? "250" : old.DelayText!,
+                            });
+                        }
+                    }
+
+                    if (mappedMember.Steps.Count == 0)
+                    {
+                        mappedMember.Steps.Add(new ActionStepDefinition { StepType = "KEY", KeyText = string.Empty, DelayText = "250" });
                     }
 
                     created.Members.Add(mappedMember);
@@ -2137,13 +2462,23 @@ public sealed partial class MainWindow : Window
         public required bool IsActive { get; set; }
         public required string Label { get; set; }
         public required string ProcessIdText { get; set; }
-        public required List<KeyStepDefinition> KeySteps { get; set; }
+        public required List<ActionStepDefinition> Steps { get; set; }
     }
 
-    private sealed class KeyStepDefinition
+    private sealed class ActionStepDefinition
     {
+        public required string StepType { get; set; }
         public required string KeyText { get; set; }
+        public string MousePointId { get; set; } = string.Empty;
         public required string DelayText { get; set; }
+    }
+
+    private sealed class MousePointDefinition
+    {
+        public required string Id { get; set; }
+        public required string Name { get; set; }
+        public required string XText { get; set; }
+        public required string YText { get; set; }
     }
 
     private sealed class SupportedServerDto
@@ -2162,7 +2497,9 @@ public sealed partial class MainWindow : Window
         public string? NameAddressHex { get; set; }
         public string? ToggleHotkey { get; set; }
         public bool EnableAudioCue { get; set; } = true;
+        public int? MouseFocusSettleDelayMs { get; set; }
         public int? ArchbishopProcessId { get; set; }
+        public List<MousePointProfile> MousePoints { get; set; } = new();
         public List<TriggerProfile> Triggers { get; set; } = new();
     }
 
@@ -2181,12 +2518,29 @@ public sealed partial class MainWindow : Window
         public bool IsActive { get; set; } = true;
         public string? Label { get; set; }
         public string? ProcessIdText { get; set; }
+        public List<StepProfile> Steps { get; set; } = new();
         public List<KeyStepProfile> KeySteps { get; set; } = new();
+    }
+
+    private sealed class StepProfile
+    {
+        public string? StepType { get; set; }
+        public string? KeyText { get; set; }
+        public string? MousePointId { get; set; }
+        public string? DelayText { get; set; }
     }
 
     private sealed class KeyStepProfile
     {
         public string? KeyText { get; set; }
         public string? DelayText { get; set; }
+    }
+
+    private sealed class MousePointProfile
+    {
+        public string? Id { get; set; }
+        public string? Name { get; set; }
+        public string? XText { get; set; }
+        public string? YText { get; set; }
     }
 }

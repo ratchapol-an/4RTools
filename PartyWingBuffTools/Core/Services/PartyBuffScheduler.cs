@@ -24,6 +24,7 @@ public sealed class PartyBuffScheduler
                 new()
                 {
                     ProcessId = config.ArchbishopProcessId,
+                    Type = ActionStepType.Key,
                     Key = trigger.TeleportKey,
                     Reason = $"{trigger.Name}:Teleport",
                     DelayAfterMs = Math.Max(0, trigger.PostTeleportDelayMs),
@@ -32,16 +33,19 @@ public sealed class PartyBuffScheduler
 
             foreach (MemberSequenceConfig member in trigger.Members)
             {
-                var steps = member.KeySequence
-                    .Where(k => !string.IsNullOrWhiteSpace(k.Key))
+                var steps = member.Steps
+                    .Where(IsValidStep)
                     .ToList();
                 for (int stepIndex = 0; stepIndex < steps.Count; stepIndex++)
                 {
-                    KeyStepConfig step = steps[stepIndex];
+                    ActionStepConfig step = steps[stepIndex];
                     actions.Add(new DispatchAction
                     {
                         ProcessId = member.ProcessId,
+                        Type = step.Type,
                         Key = step.Key,
+                        NormalizedX = step.NormalizedX,
+                        NormalizedY = step.NormalizedY,
                         Reason = $"{trigger.Name}:{member.CharacterLabel}:{member.ProcessId}:Step{stepIndex + 1}",
                         DelayAfterMs = Math.Max(0, step.DelayAfterMs),
                     });
@@ -74,5 +78,15 @@ public sealed class PartyBuffScheduler
     public void Reset()
     {
         _lastRunByTrigger.Clear();
+    }
+
+    private static bool IsValidStep(ActionStepConfig step)
+    {
+        if (step.Type == ActionStepType.Key)
+        {
+            return !string.IsNullOrWhiteSpace(step.Key);
+        }
+
+        return step.NormalizedX.HasValue && step.NormalizedY.HasValue;
     }
 }
