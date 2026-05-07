@@ -56,6 +56,7 @@ public sealed partial class MainWindow : Window
     private readonly string _appVersion;
     private string _toggleHotkey = "PGDN";
     private DateTimeOffset _ignoreGlobalHotkeyUntilUtc = DateTimeOffset.MinValue;
+    private bool _scheduledJobsInitialized;
 
     private ComboBox _archbishopProcessComboBox = null!;
     private TextBlock _archbishopCharacterText = null!;
@@ -72,6 +73,7 @@ public sealed partial class MainWindow : Window
     private StackPanel _settingsPanel = null!;
     private StackPanel _logsPanel = null!;
     private StackPanel _profilesPanel = null!;
+    private FrameworkElement _scheduledJobsPanel = null!;
     private TextBox _serverProcessNameTextBox = null!;
     private TextBox _hpAddressTextBox = null!;
     private TextBox _nameAddressTextBox = null!;
@@ -102,6 +104,10 @@ public sealed partial class MainWindow : Window
         {
             SaveProfile(_currentProfileName, logResult: false);
             _globalHotkeyService.Dispose();
+            if (_scheduledJobsInitialized)
+            {
+                StopScheduledJobsLoop();
+            }
             StopLogWriter();
         };
     }
@@ -138,14 +144,17 @@ public sealed partial class MainWindow : Window
         var settingsNavButton = new Button { Content = "⚙ Address Settings", HorizontalAlignment = HorizontalAlignment.Stretch };
         var profilesNavButton = new Button { Content = "👤 Profiles", HorizontalAlignment = HorizontalAlignment.Stretch };
         var logsNavButton = new Button { Content = "📝 Logs", HorizontalAlignment = HorizontalAlignment.Stretch };
+        var schedulesNavButton = new Button { Content = "⏰ Scheduled Jobs", HorizontalAlignment = HorizontalAlignment.Stretch };
         runNavButton.Click += (_, _) => ShowPanel("run");
         settingsNavButton.Click += (_, _) => ShowPanel("settings");
         profilesNavButton.Click += (_, _) => ShowPanel("profiles");
         logsNavButton.Click += (_, _) => ShowPanel("logs");
+        schedulesNavButton.Click += (_, _) => ShowPanel("scheduled");
         navItems.Children.Add(runNavButton);
         navItems.Children.Add(settingsNavButton);
         navItems.Children.Add(profilesNavButton);
         navItems.Children.Add(logsNavButton);
+        navItems.Children.Add(schedulesNavButton);
         Grid.SetRow(navItems, 1);
         leftNav.Children.Add(navItems);
 
@@ -183,45 +192,10 @@ public sealed partial class MainWindow : Window
         };
         var saveProfileButton = new Button { Content = "💾 Save" };
         saveProfileButton.Click += (_, _) => SaveProfile(_currentProfileName, logResult: true);
-        _startButton = new Button { Content = "▶ Start" };
-        _startButton.Click += async (_, _) => await StartSchedulerAsync();
-        _stopButton = new Button { Content = "■ Stop", IsEnabled = false };
-        _stopButton.Click += (_, _) => _runCts?.Cancel();
-        _toggleHotkeyTextBox = new TextBox { Text = _toggleHotkey, IsReadOnly = true, Width = 70, HorizontalAlignment = HorizontalAlignment.Left };
-        _toggleHotkeyTextBox.KeyDown += (_, e) =>
-        {
-            string token = ConvertVirtualKeyToToken(e.Key);
-            if (token is "Back" or "Esc")
-            {
-                e.Handled = true;
-                return;
-            }
-
-            if (ApplyGlobalToggleHotkey(token, logResult: true))
-            {
-                _toggleHotkeyTextBox.Text = _toggleHotkey;
-                // Ignore this same key press so setting a hotkey never toggles immediately.
-                _ignoreGlobalHotkeyUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
-            }
-            else
-            {
-                AppendLog($"Unsupported toggle key '{token}'.");
-            }
-
-            e.Handled = true;
-        };
-        _audioCueCheckBox = new CheckBox { Content = "Audio cue", IsChecked = true, VerticalAlignment = VerticalAlignment.Center };
-        _statusText = new TextBlock { Text = "Status: Idle", VerticalAlignment = VerticalAlignment.Center };
         topActions.Children.Add(refreshButton);
         topActions.Children.Add(new TextBlock { Text = "Profile:", VerticalAlignment = VerticalAlignment.Center });
         topActions.Children.Add(_profileComboBox);
         topActions.Children.Add(saveProfileButton);
-        topActions.Children.Add(_startButton);
-        topActions.Children.Add(_stopButton);
-        topActions.Children.Add(new TextBlock { Text = "Toggle key:", VerticalAlignment = VerticalAlignment.Center });
-        topActions.Children.Add(_toggleHotkeyTextBox);
-        topActions.Children.Add(_audioCueCheckBox);
-        topActions.Children.Add(_statusText);
         Grid.SetRow(topActions, 0);
         rightRoot.Children.Add(topActions);
 
@@ -243,6 +217,10 @@ public sealed partial class MainWindow : Window
         _profilesPanel = BuildProfilesPanel();
         _profilesPanel.Visibility = Visibility.Collapsed;
         contentHost.Children.Add(_profilesPanel);
+
+        _scheduledJobsPanel = BuildScheduledJobsPanel();
+        _scheduledJobsPanel.Visibility = Visibility.Collapsed;
+        contentHost.Children.Add(_scheduledJobsPanel);
 
         Grid.SetColumn(rightRoot, 1);
         host.Children.Add(rightRoot);
@@ -328,16 +306,58 @@ public sealed partial class MainWindow : Window
         var runGrid = new Grid { ColumnSpacing = 12, RowSpacing = 10 };
         runGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         runGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        runGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         runGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         runGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1.4, GridUnitType.Star) });
         runGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        var partyControls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10 };
+        _startButton = new Button { Content = "▶ Start" };
+        _startButton.Click += async (_, _) => await StartSchedulerAsync();
+        _stopButton = new Button { Content = "■ Stop", IsEnabled = false };
+        _stopButton.Click += (_, _) => _runCts?.Cancel();
+        _toggleHotkeyTextBox = new TextBox { Text = _toggleHotkey, IsReadOnly = true, Width = 70, HorizontalAlignment = HorizontalAlignment.Left };
+        _toggleHotkeyTextBox.KeyDown += (_, e) =>
+        {
+            string token = ConvertVirtualKeyToToken(e.Key);
+            if (token is "Back" or "Esc")
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (ApplyGlobalToggleHotkey(token, logResult: true))
+            {
+                _toggleHotkeyTextBox.Text = _toggleHotkey;
+                _ignoreGlobalHotkeyUntilUtc = DateTimeOffset.UtcNow.AddMilliseconds(500);
+            }
+            else
+            {
+                AppendLog($"Unsupported toggle key '{token}'.");
+            }
+
+            e.Handled = true;
+        };
+        _audioCueCheckBox = new CheckBox { Content = "Audio cue", IsChecked = true, VerticalAlignment = VerticalAlignment.Center };
+        _statusText = new TextBlock { Text = "Status: Idle", VerticalAlignment = VerticalAlignment.Center };
+        partyControls.Children.Add(new TextBlock { Text = "Party Trigger:", VerticalAlignment = VerticalAlignment.Center, FontWeight = FontWeights.SemiBold });
+        partyControls.Children.Add(_startButton);
+        partyControls.Children.Add(_stopButton);
+        partyControls.Children.Add(new TextBlock { Text = "Toggle key:", VerticalAlignment = VerticalAlignment.Center });
+        partyControls.Children.Add(_toggleHotkeyTextBox);
+        partyControls.Children.Add(_audioCueCheckBox);
+        partyControls.Children.Add(_statusText);
+        Grid.SetRow(partyControls, 0);
+        Grid.SetColumn(partyControls, 0);
+        Grid.SetColumnSpan(partyControls, 2);
+        runGrid.Children.Add(partyControls);
 
         var leftTop = new StackPanel { Spacing = 8 };
         leftTop.Children.Add(new TextBlock { Text = "👑 Archbishop Process", FontWeight = FontWeights.Bold, FontSize = 16 });
         _archbishopProcessComboBox = new ComboBox { DisplayMemberPath = "DisplayName", SelectedValuePath = "ProcessId" };
         _archbishopCharacterText = new TextBlock { Text = "Character: -" };
         leftTop.Children.Add(_archbishopProcessComboBox);
-        Grid.SetRow(leftTop, 0);
+        Grid.SetRow(leftTop, 1);
         Grid.SetColumn(leftTop, 0);
         runGrid.Children.Add(leftTop);
 
@@ -347,18 +367,18 @@ public sealed partial class MainWindow : Window
             Text = "Set key press and delay in separate member fields.",
             VerticalAlignment = VerticalAlignment.Center,
         });
-        Grid.SetRow(rightTop, 0);
+        Grid.SetRow(rightTop, 1);
         Grid.SetColumn(rightTop, 1);
         runGrid.Children.Add(rightTop);
 
         FrameworkElement triggerEditor = BuildTriggerEditor();
-        Grid.SetRow(triggerEditor, 1);
+        Grid.SetRow(triggerEditor, 2);
         Grid.SetColumn(triggerEditor, 0);
         Grid.SetColumnSpan(triggerEditor, 2);
         runGrid.Children.Add(triggerEditor);
 
         FrameworkElement memberEditor = BuildMemberEditor();
-        Grid.SetRow(memberEditor, 2);
+        Grid.SetRow(memberEditor, 3);
         Grid.SetColumn(memberEditor, 0);
         Grid.SetColumnSpan(memberEditor, 2);
         runGrid.Children.Add(memberEditor);
@@ -841,6 +861,7 @@ public sealed partial class MainWindow : Window
 
         _pendingArchbishopProcessId = null;
         RenderMembers();
+        RefreshScheduledJobsProcessOptions();
         UpdateArchbishopCharacterPreview();
         AppendLog($"Detected {_availableProcesses.Count} Ragnarok client(s).");
     }
@@ -1080,6 +1101,7 @@ public sealed partial class MainWindow : Window
     {
         AppendLog($"Trigger fired: {plan.TriggerName}");
         await SetTriggerExecutingVisualAsync(plan.TriggerName, isExecuting: true);
+        await _dispatchExecutionGate.WaitAsync(ct);
         try
         {
 
@@ -1117,6 +1139,7 @@ public sealed partial class MainWindow : Window
         }
         finally
         {
+            _dispatchExecutionGate.Release();
             await SetTriggerExecutingVisualAsync(plan.TriggerName, isExecuting: false);
         }
     }
@@ -1283,10 +1306,26 @@ public sealed partial class MainWindow : Window
 
     private void ShowPanel(string panel)
     {
+        if (panel == "scheduled" && !_scheduledJobsInitialized)
+        {
+            try
+            {
+                _scheduledJobsInitialized = true;
+                InitializeScheduledJobs();
+            }
+            catch (Exception ex)
+            {
+                AppendLog($"Failed to open Scheduled Jobs tab: {ex.Message}");
+                _scheduledJobsInitialized = false;
+                panel = "run";
+            }
+        }
+
         _runPanel.Visibility = panel == "run" ? Visibility.Visible : Visibility.Collapsed;
         _settingsPanel.Visibility = panel == "settings" ? Visibility.Visible : Visibility.Collapsed;
         _profilesPanel.Visibility = panel == "profiles" ? Visibility.Visible : Visibility.Collapsed;
         _logsPanel.Visibility = panel == "logs" ? Visibility.Visible : Visibility.Collapsed;
+        _scheduledJobsPanel.Visibility = panel == "scheduled" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private string GetCharacterName(string processIdText)
