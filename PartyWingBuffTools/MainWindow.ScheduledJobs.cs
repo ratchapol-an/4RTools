@@ -28,8 +28,59 @@ public sealed partial class MainWindow
     private Button _scheduledJobsStopButton = null!;
     private StackPanel _scheduledActionsHost = null!;
     private StackPanel _scheduledJobsHost = null!;
-    private Grid _scheduledActionsPanel = null!;
-    private Grid _scheduledJobsPanelBody = null!;
+
+    private FrameworkElement BuildScheduledActionsPanel()
+    {
+        var root = new Grid { RowSpacing = 8 };
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+
+        var title = new TextBlock { Text = "🧩 Scheduled Actions", FontWeight = Microsoft.UI.Text.FontWeights.Bold, FontSize = 16 };
+        Grid.SetRow(title, 0);
+        root.Children.Add(title);
+
+        var subtitle = new TextBlock
+        {
+            Text = "Define reusable action templates with key/mouse steps and delays.",
+            Opacity = 0.85,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Grid.SetRow(subtitle, 1);
+        root.Children.Add(subtitle);
+
+        var actionsHeader = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        actionsHeader.Children.Add(new TextBlock { Text = "Actions", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, FontSize = 15 });
+        var addActionButton = new Button { Content = "+ Add Action" };
+        addActionButton.Click += (_, _) =>
+        {
+            _scheduledActions.Add(new ScheduledActionDefinition
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = $"Action{_scheduledActions.Count + 1}",
+                Steps = new List<ScheduledActionStep> { new() { StepType = "KEY", KeyText = string.Empty, DelayText = "250" } },
+            });
+            SaveScheduledJobsToDisk();
+            RenderScheduledActions();
+            RenderScheduledJobs();
+        };
+        actionsHeader.Children.Add(addActionButton);
+        Grid.SetRow(actionsHeader, 2);
+        root.Children.Add(actionsHeader);
+
+        _scheduledActionsHost = new StackPanel { Spacing = 8 };
+        var actionsScroll = new ScrollViewer
+        {
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = _scheduledActionsHost,
+        };
+        Grid.SetRow(actionsScroll, 3);
+        root.Children.Add(actionsScroll);
+
+        return root;
+    }
 
     private FrameworkElement BuildScheduledJobsPanel()
     {
@@ -46,7 +97,7 @@ public sealed partial class MainWindow
 
         var subtitle = new TextBlock
         {
-            Text = "Define action templates, then create jobs that run the selected action at one or more daily times.",
+            Text = "Create job schedules and run selected actions at daily times.",
             Opacity = 0.85,
             TextWrapping = TextWrapping.Wrap,
         };
@@ -66,68 +117,6 @@ public sealed partial class MainWindow
         Grid.SetRow(scheduledControlRow, 2);
         root.Children.Add(scheduledControlRow);
 
-        var tabButtons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        var actionsTabButton = new Button { Content = "Actions" };
-        var jobsTabButton = new Button { Content = "Schedule Jobs" };
-        tabButtons.Children.Add(actionsTabButton);
-        tabButtons.Children.Add(jobsTabButton);
-        Grid.SetRow(tabButtons, 3);
-        root.Children.Add(tabButtons);
-
-        var panelHost = new Grid();
-        Grid.SetRow(panelHost, 4);
-        root.Children.Add(panelHost);
-
-        _scheduledActionsPanel = new Grid { RowSpacing = 10 };
-        _scheduledActionsPanel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _scheduledActionsPanel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-
-        _scheduledJobsPanelBody = new Grid { RowSpacing = 10, Visibility = Visibility.Collapsed };
-        _scheduledJobsPanelBody.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        _scheduledJobsPanelBody.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        panelHost.Children.Add(_scheduledActionsPanel);
-        panelHost.Children.Add(_scheduledJobsPanelBody);
-
-        actionsTabButton.Click += (_, _) =>
-        {
-            _scheduledActionsPanel.Visibility = Visibility.Visible;
-            _scheduledJobsPanelBody.Visibility = Visibility.Collapsed;
-        };
-        jobsTabButton.Click += (_, _) =>
-        {
-            _scheduledActionsPanel.Visibility = Visibility.Collapsed;
-            _scheduledJobsPanelBody.Visibility = Visibility.Visible;
-        };
-
-        var actionsHeader = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        actionsHeader.Children.Add(new TextBlock { Text = "Actions", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, FontSize = 15 });
-        var addActionButton = new Button { Content = "+ Add Action" };
-        addActionButton.Click += (_, _) =>
-        {
-            _scheduledActions.Add(new ScheduledActionDefinition
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                Name = $"Action{_scheduledActions.Count + 1}",
-                Steps = new List<ScheduledActionStep> { new() { StepType = "KEY", KeyText = string.Empty, DelayText = "250" } },
-            });
-            SaveScheduledJobsToDisk();
-            RenderScheduledActions();
-            RenderScheduledJobs();
-        };
-        actionsHeader.Children.Add(addActionButton);
-        Grid.SetRow(actionsHeader, 0);
-        _scheduledActionsPanel.Children.Add(actionsHeader);
-
-        _scheduledActionsHost = new StackPanel { Spacing = 8 };
-        var actionsScroll = new ScrollViewer
-        {
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Content = _scheduledActionsHost,
-        };
-        Grid.SetRow(actionsScroll, 1);
-        _scheduledActionsPanel.Children.Add(actionsScroll);
-
         var jobsHeader = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
         jobsHeader.Children.Add(new TextBlock { Text = "Jobs", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, FontSize = 15 });
         var addJobButton = new Button { Content = "+ Add Job" };
@@ -145,8 +134,8 @@ public sealed partial class MainWindow
             RenderScheduledJobs();
         };
         jobsHeader.Children.Add(addJobButton);
-        Grid.SetRow(jobsHeader, 0);
-        _scheduledJobsPanelBody.Children.Add(jobsHeader);
+        Grid.SetRow(jobsHeader, 3);
+        root.Children.Add(jobsHeader);
 
         _scheduledJobsHost = new StackPanel { Spacing = 10 };
         var jobsScroll = new ScrollViewer
@@ -155,8 +144,8 @@ public sealed partial class MainWindow
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = _scheduledJobsHost,
         };
-        Grid.SetRow(jobsScroll, 1);
-        _scheduledJobsPanelBody.Children.Add(jobsScroll);
+        Grid.SetRow(jobsScroll, 4);
+        root.Children.Add(jobsScroll);
 
         return root;
     }
@@ -171,11 +160,53 @@ public sealed partial class MainWindow
         };
     }
 
+    private void EnsureDefaultPkScheduledJobs()
+    {
+        if (_scheduledJobs.Count > 0)
+        {
+            return;
+        }
+
+        string actionId = _scheduledActions.FirstOrDefault()?.Id ?? string.Empty;
+        string[] startTimes = { "23:54", "03:54", "07:54", "11:54", "15:54", "19:54" };
+        string[] endTimes = { "00:20", "04:20", "08:20", "12:20", "16:20", "20:20" };
+
+        _scheduledJobs.Add(new ScheduledJobDefinition
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = "PK Start",
+            ActionId = actionId,
+            Runs = startTimes.Select(time => new ScheduledRunTimeDefinition
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                TimeText = time,
+                IsEnabled = true,
+            }).ToList(),
+        });
+
+        _scheduledJobs.Add(new ScheduledJobDefinition
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Name = "PK End",
+            ActionId = actionId,
+            Runs = endTimes.Select(time => new ScheduledRunTimeDefinition
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                TimeText = time,
+                IsEnabled = true,
+            }).ToList(),
+        });
+
+        SaveScheduledJobsToDisk();
+        RecomputeNextScheduledRuns();
+    }
+
     private void InitializeScheduledJobs()
     {
         try
         {
             LoadScheduledJobsFromDisk();
+            EnsureDefaultPkScheduledJobs();
             RenderScheduledActions();
             RenderScheduledJobs();
             SetScheduledJobsEnabled(_scheduledJobsEnabled);

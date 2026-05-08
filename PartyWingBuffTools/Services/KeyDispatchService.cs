@@ -10,7 +10,6 @@ public sealed class KeyDispatchService
 {
     private const int WmKeyDown = 0x0100;
     private const int WmKeyUp = 0x0101;
-    private const int WmChar = 0x0102;
     private const uint InputMouse = 0;
     private const uint MouseeventfMove = 0x0001;
     private const uint MouseeventfAbsolute = 0x8000;
@@ -19,6 +18,9 @@ public sealed class KeyDispatchService
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
     [DllImport("user32.dll")]
     private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
@@ -121,15 +123,12 @@ public sealed class KeyDispatchService
             return false;
         }
 
-        int charCode = TryParseCharCode(keyText);
-        if (charCode > 0)
-        {
-            return PostMessage(handle, WmChar, new IntPtr(charCode), IntPtr.Zero);
-        }
-
         var keyParam = new IntPtr(virtualKey);
-        bool down = PostMessage(handle, WmKeyDown, keyParam, IntPtr.Zero);
-        bool up = PostMessage(handle, WmKeyUp, keyParam, IntPtr.Zero);
+        uint scanCode = MapVirtualKey((uint)virtualKey, 0);
+        int lParamDown = unchecked((int)((scanCode << 16) | 1u));
+        int lParamUp = unchecked((int)((scanCode << 16) | (1u << 30) | (1u << 31) | 1u));
+        bool down = PostMessage(handle, WmKeyDown, keyParam, new IntPtr(lParamDown));
+        bool up = PostMessage(handle, WmKeyUp, keyParam, new IntPtr(lParamUp));
         return down && up;
     }
 
@@ -285,24 +284,6 @@ public sealed class KeyDispatchService
                 _ = AttachThreadInput(currentThreadId, foregroundThreadId, false);
             }
         }
-    }
-
-    private static int TryParseCharCode(string keyText)
-    {
-        string normalized = (keyText ?? string.Empty).Trim().ToUpperInvariant();
-        if (normalized.Length == 1)
-        {
-            char c = normalized[0];
-            if (c >= 'A' && c <= 'Z')
-            {
-                return c;
-            }
-        }
-
-        return normalized switch
-        {
-            _ => 0,
-        };
     }
 
     private IntPtr ResolvePrimaryWindowHandle(int processId)

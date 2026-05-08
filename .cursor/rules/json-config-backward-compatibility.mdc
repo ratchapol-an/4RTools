@@ -1,0 +1,33 @@
+---
+description: Keep JSON config files backward compatible across versions
+alwaysApply: true
+---
+
+# JSON Config Compatibility
+
+All changes to JSON config formats must remain backward compatible and downgrade-safe.
+
+- Treat existing keys as a public contract. Do not rename/remove/change type of existing keys in `profiles/*.json`, `actions/actions.json`, or `actions/schedules.json`.
+- New fields must be optional and have safe defaults when missing.
+- Loaders must tolerate unknown fields and missing fields without throwing.
+- If new shape is introduced, keep dual-read support for old shape and new shape.
+- Save logic must not destroy older data unexpectedly (avoid lossy migrations).
+- For downgrade safety (ex: `v1.0.6` -> `v1.0.4`), continue writing legacy keys that older versions require until a deliberate breaking-version decision is made.
+
+## Required Implementation Pattern
+
+- **Read:** support both old and new keys.
+- **Normalize:** map to current runtime model with defaults.
+- **Write:** include compatibility fields when needed for previous versions.
+- **Protect:** on parse failure, back up invalid file and continue with safe defaults.
+
+## Example
+
+- Bad: replace `KeySteps` with `Steps` and stop writing `KeySteps`.
+- Good: read both `KeySteps` and `Steps`; when saving, write `Steps` plus compatible `KeySteps` projection (for key-type steps) until downgrade support is dropped intentionally.
+
+## Validation Checklist (before merge)
+
+- Load old sample configs without error.
+- Save and reopen in current version successfully.
+- Downgrade-open in previous supported version successfully.

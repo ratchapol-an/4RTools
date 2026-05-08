@@ -74,6 +74,7 @@ public sealed partial class MainWindow : Window
     private StackPanel _settingsPanel = null!;
     private StackPanel _logsPanel = null!;
     private StackPanel _profilesPanel = null!;
+    private FrameworkElement _scheduledActionsPanel = null!;
     private FrameworkElement _scheduledJobsPanel = null!;
     private StackPanel _mousePointsPanel = null!;
     private StackPanel _mousePointsHost = null!;
@@ -120,72 +121,11 @@ public sealed partial class MainWindow : Window
 
     private void BuildUi()
     {
-        var host = new Grid { ColumnSpacing = 12 };
-        host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(220) });
-        host.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        var leftNav = new Grid { Padding = new Thickness(8, 4, 8, 8) };
-        leftNav.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        leftNav.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        leftNav.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        var navBorder = new Border
-        {
-            Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["LayerFillColorDefaultBrush"],
-            Child = leftNav,
-        };
-
-        var navTitle = new TextBlock
-        {
-            Text = $"PartyWingBuffTools v{_appVersion}",
-            FontWeight = FontWeights.Bold,
-            FontSize = 16,
-            Margin = new Thickness(8, 8, 8, 14),
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
-        };
-        Grid.SetRow(navTitle, 0);
-        leftNav.Children.Add(navTitle);
-
-        var navItems = new StackPanel { Spacing = 8 };
-        var runNavButton = new Button { Content = "⚔ Party Trigger", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var settingsNavButton = new Button { Content = "⚙ Address Settings", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var profilesNavButton = new Button { Content = "👤 Profiles", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var logsNavButton = new Button { Content = "📝 Logs", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var schedulesNavButton = new Button { Content = "⏰ Scheduled Jobs", HorizontalAlignment = HorizontalAlignment.Stretch };
-        var mousePointsNavButton = new Button { Content = "🖱 Mouse Points", HorizontalAlignment = HorizontalAlignment.Stretch };
-        runNavButton.Click += (_, _) => ShowPanel("run");
-        settingsNavButton.Click += (_, _) => ShowPanel("settings");
-        profilesNavButton.Click += (_, _) => ShowPanel("profiles");
-        logsNavButton.Click += (_, _) => ShowPanel("logs");
-        schedulesNavButton.Click += (_, _) => ShowPanel("scheduled");
-        mousePointsNavButton.Click += (_, _) => ShowPanel("mouse-points");
-        navItems.Children.Add(runNavButton);
-        navItems.Children.Add(settingsNavButton);
-        navItems.Children.Add(profilesNavButton);
-        navItems.Children.Add(logsNavButton);
-        navItems.Children.Add(schedulesNavButton);
-        navItems.Children.Add(mousePointsNavButton);
-        Grid.SetRow(navItems, 1);
-        leftNav.Children.Add(navItems);
-
-        var navFooter = new TextBlock
-        {
-            Text = $"Profiles and logs are on left menu{Environment.NewLine}Version: v{_appVersion}",
-            Margin = new Thickness(8),
-            Opacity = 0.7,
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-        };
-        Grid.SetRow(navFooter, 2);
-        leftNav.Children.Add(navFooter);
-
-        Grid.SetColumn(navBorder, 0);
-        host.Children.Add(navBorder);
-
-        var rightRoot = new Grid { RowSpacing = 10 };
+        var rightRoot = new Grid { RowSpacing = 12, Margin = new Thickness(14, 10, 14, 14) };
         rightRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         rightRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-        var topActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 0, 0, 6) };
+        var topActions = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 12, Margin = new Thickness(0, 2, 0, 10) };
         var refreshButton = new Button { Content = "Refresh Processes" };
         refreshButton.Click += (_, _) => { RefreshProcesses(); AppendLog("Processes refreshed."); };
         _profileComboBox = new ComboBox { MinWidth = 150 };
@@ -227,6 +167,10 @@ public sealed partial class MainWindow : Window
         _profilesPanel.Visibility = Visibility.Collapsed;
         contentHost.Children.Add(_profilesPanel);
 
+        _scheduledActionsPanel = BuildScheduledActionsPanel();
+        _scheduledActionsPanel.Visibility = Visibility.Collapsed;
+        contentHost.Children.Add(_scheduledActionsPanel);
+
         _scheduledJobsPanel = BuildScheduledJobsPanel();
         _scheduledJobsPanel.Visibility = Visibility.Collapsed;
         contentHost.Children.Add(_scheduledJobsPanel);
@@ -235,10 +179,30 @@ public sealed partial class MainWindow : Window
         _mousePointsPanel.Visibility = Visibility.Collapsed;
         contentHost.Children.Add(_mousePointsPanel);
 
-        Grid.SetColumn(rightRoot, 1);
-        host.Children.Add(rightRoot);
+        var navView = new NavigationView
+        {
+            IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
+            IsSettingsVisible = false,
+            IsPaneToggleButtonVisible = true,
+            PaneDisplayMode = NavigationViewPaneDisplayMode.Left,
+            Content = rightRoot,
+        };
+        navView.MenuItems.Add(CreateNavItem("Party Trigger", "run", "\uE7FC", true));
+        navView.MenuItems.Add(CreateNavItem("Address Settings", "settings", "\uE713"));
+        navView.MenuItems.Add(CreateNavItem("Profiles", "profiles", "\uE716"));
+        navView.MenuItems.Add(CreateNavItem("Logs", "logs", "\uE8A5"));
+        navView.MenuItems.Add(CreateNavItem("Scheduled Actions", "scheduled-actions", "\uE8AB"));
+        navView.MenuItems.Add(CreateNavItem("Scheduled Jobs", "scheduled", "\uE823"));
+        navView.MenuItems.Add(CreateNavItem("Mouse Points", "mouse-points", "\uE7C9"));
+        navView.SelectionChanged += (_, args) =>
+        {
+            if (args.SelectedItemContainer?.Tag is string panelTag)
+            {
+                ShowPanel(panelTag);
+            }
+        };
 
-        ContentHost.Children.Add(host);
+        ContentHost.Children.Add(navView);
 
         AddTrigger("Buff60", "60", "F1", "300");
         AddTrigger("Buff180", "180", "F1", "300");
@@ -246,6 +210,17 @@ public sealed partial class MainWindow : Window
         ShowPanel("run");
 
         _archbishopProcessComboBox.SelectionChanged += (_, _) => UpdateArchbishopCharacterPreview();
+    }
+
+    private static NavigationViewItem CreateNavItem(string text, string tag, string glyph, bool isSelected = false)
+    {
+        return new NavigationViewItem
+        {
+            Content = text,
+            Tag = tag,
+            IsSelected = isSelected,
+            Icon = new FontIcon { Glyph = glyph },
+        };
     }
 
     private void InitializeGlobalHotkey()
@@ -553,8 +528,10 @@ public sealed partial class MainWindow : Window
         title.Children.Add(addButton);
         title.Children.Add(new TextBlock
         {
-            Text = "Add key-step rows per member. Each row has a key capture box and delay (ms).",
+            Text = "Add key/mouse rows per member. Each row has a key or mouse point and delay (ms).",
             VerticalAlignment = VerticalAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            MaxWidth = 420,
         });
         wrapper.Children.Add(title);
 
@@ -562,7 +539,7 @@ public sealed partial class MainWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(560) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(HeaderText("Active", 0));
         header.Children.Add(HeaderText("Role/Label", 1));
@@ -725,7 +702,7 @@ public sealed partial class MainWindow : Window
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(260) });
-            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(420) });
+            rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(560) });
             rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
             var activeCheck = new CheckBox { IsChecked = member.IsActive, VerticalAlignment = VerticalAlignment.Center, HorizontalAlignment = HorizontalAlignment.Left };
@@ -744,6 +721,7 @@ public sealed partial class MainWindow : Window
                 member.Steps.Add(new ActionStepDefinition { StepType = "KEY", KeyText = string.Empty, DelayText = "250" });
             }
 
+            int executionStepNumber = 0;
             for (int stepIndex = 0; stepIndex < member.Steps.Count; stepIndex++)
             {
                 ActionStepDefinition step = member.Steps[stepIndex];
@@ -838,11 +816,12 @@ public sealed partial class MainWindow : Window
                 applyStepUiState();
                 stepsHost.Children.Add(stepGrid);
 
-                if (int.TryParse(member.ProcessIdText, out int processId))
+                if (int.TryParse(member.ProcessIdText, out int processId) && IsMemberStepExecutable(step))
                 {
+                    executionStepNumber++;
                     string memberLabel = GetMemberReasonLabel(member, processId);
-                    string reason = BuildStepReason(_selectedTrigger.Name, memberLabel, processId, stepIndex + 1);
-                    _stepVisualsByReason[reason] = new Control[] { stepKeyBox, stepDelayBox };
+                    string reason = BuildStepReason(_selectedTrigger.Name, memberLabel, processId, executionStepNumber);
+                    _stepVisualsByReason[reason] = new Control[] { typeCombo, stepKeyBox, pointCombo, stepDelayBox };
                     _stepIndicatorByReason[reason] = stepIndicator;
                 }
             }
@@ -1291,6 +1270,16 @@ public sealed partial class MainWindow : Window
         return string.Equals(stepType, "MOUSE", StringComparison.OrdinalIgnoreCase) ? "MOUSE" : "KEY";
     }
 
+    private bool IsMemberStepExecutable(ActionStepDefinition step)
+    {
+        if (NormalizeStepType(step.StepType) == "KEY")
+        {
+            return !string.IsNullOrWhiteSpace(step.KeyText);
+        }
+
+        return TryResolveMousePoint(step.MousePointId, out _, out _);
+    }
+
     private void InitializeExecutionIndicatorBrushes()
     {
         var resources = Application.Current.Resources;
@@ -1583,7 +1572,7 @@ public sealed partial class MainWindow : Window
 
     private void ShowPanel(string panel)
     {
-        if (panel == "scheduled" && !_scheduledJobsInitialized)
+        if ((panel == "scheduled" || panel == "scheduled-actions") && !_scheduledJobsInitialized)
         {
             try
             {
@@ -1602,6 +1591,7 @@ public sealed partial class MainWindow : Window
         _settingsPanel.Visibility = panel == "settings" ? Visibility.Visible : Visibility.Collapsed;
         _profilesPanel.Visibility = panel == "profiles" ? Visibility.Visible : Visibility.Collapsed;
         _logsPanel.Visibility = panel == "logs" ? Visibility.Visible : Visibility.Collapsed;
+        _scheduledActionsPanel.Visibility = panel == "scheduled-actions" ? Visibility.Visible : Visibility.Collapsed;
         _scheduledJobsPanel.Visibility = panel == "scheduled" ? Visibility.Visible : Visibility.Collapsed;
         _mousePointsPanel.Visibility = panel == "mouse-points" ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -2289,6 +2279,14 @@ public sealed partial class MainWindow : Window
                             MousePointId = s.MousePointId,
                             DelayText = s.DelayText,
                         }).ToList(),
+                        // Keep writing legacy KeySteps for downgrade compatibility (v1.0.4).
+                        KeySteps = m.Steps
+                            .Where(s => NormalizeStepType(s.StepType) == "KEY")
+                            .Select(s => new KeyStepProfile
+                            {
+                                KeyText = s.KeyText,
+                                DelayText = s.DelayText,
+                            }).ToList(),
                     }).ToList(),
                 }).ToList(),
             };
