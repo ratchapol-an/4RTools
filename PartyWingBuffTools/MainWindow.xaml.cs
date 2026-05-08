@@ -41,10 +41,16 @@ public sealed partial class MainWindow : Window
     private readonly Dictionary<TriggerDefinition, TextBox> _triggerIntervalBoxByTrigger = new();
     private readonly Dictionary<string, IReadOnlyList<Control>> _stepVisualsByReason = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextBlock> _stepIndicatorByReason = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, TextBlock> _hpTriggerHpTextByProcessId = new();
     private readonly List<MousePointDefinition> _mousePoints = new();
+    private readonly HashSet<int> _hpTriggerWatchedProcessIds = new();
+    private readonly Dictionary<int, bool> _hpTriggerBelowThresholdByProcessId = new();
     private TriggerDefinition? _selectedTrigger;
     private CancellationTokenSource? _runCts;
+    private CancellationTokenSource? _hpTriggerCts;
+    private Task? _hpTriggerTask;
     private int? _pendingArchbishopProcessId;
+    private int? _pendingHpTriggerMainProcessId;
     private string _currentProfileName = DefaultProfileName;
     private readonly Queue<string> _recentLogLines = new();
     private readonly object _logFileLock = new();
@@ -76,8 +82,16 @@ public sealed partial class MainWindow : Window
     private FrameworkElement _scheduledActionsPanel = null!;
     private FrameworkElement _scheduledJobsPanel = null!;
     private StackPanel _mousePointsPanel = null!;
+    private FrameworkElement _hpTriggerPanel = null!;
     private StackPanel _mousePointsHost = null!;
     private ComboBox _mousePointTestProcessComboBox = null!;
+    private ComboBox _hpTriggerMainProcessComboBox = null!;
+    private TextBox _hpTriggerTeleportKeyTextBox = null!;
+    private TextBox _hpTriggerThresholdTextBox = null!;
+    private TextBlock _hpTriggerStatusText = null!;
+    private Button _hpTriggerStartButton = null!;
+    private Button _hpTriggerStopButton = null!;
+    private StackPanel _hpTriggerWatchHost = null!;
     private TextBox _serverProcessNameTextBox = null!;
     private TextBox _hpAddressTextBox = null!;
     private TextBox _nameAddressTextBox = null!;
@@ -86,6 +100,9 @@ public sealed partial class MainWindow : Window
     private TextBox _profileNameTextBox = null!;
     private Microsoft.UI.Xaml.Media.Brush _normalForegroundBrush = null!;
     private Microsoft.UI.Xaml.Media.Brush _executingForegroundBrush = null!;
+    private bool _hpTriggerEnabled;
+    private string _hpTriggerTeleportKey = "F1";
+    private string _hpTriggerThresholdText = "30";
 
     public MainWindow()
     {
@@ -110,6 +127,7 @@ public sealed partial class MainWindow : Window
         {
             SaveProfile(_currentProfileName, logResult: false);
             _globalHotkeyService.Dispose();
+            StopHpTriggerLoop();
             if (_scheduledJobsInitialized)
             {
                 StopScheduledJobsLoop();
@@ -178,6 +196,10 @@ public sealed partial class MainWindow : Window
         _mousePointsPanel.Visibility = Visibility.Collapsed;
         contentHost.Children.Add(_mousePointsPanel);
 
+        _hpTriggerPanel = BuildHpTriggerPanel();
+        _hpTriggerPanel.Visibility = Visibility.Collapsed;
+        contentHost.Children.Add(_hpTriggerPanel);
+
         var navView = new NavigationView
         {
             IsBackButtonVisible = NavigationViewBackButtonVisible.Collapsed,
@@ -193,6 +215,7 @@ public sealed partial class MainWindow : Window
         navView.MenuItems.Add(CreateNavItem("Scheduled Actions", "scheduled-actions", "\uE8AB"));
         navView.MenuItems.Add(CreateNavItem("Scheduled Jobs", "scheduled", "\uE823"));
         navView.MenuItems.Add(CreateNavItem("Mouse Points", "mouse-points", "\uE7C9"));
+        navView.MenuItems.Add(CreateNavItem("HP Trigger", "hp-trigger", "\uE814"));
         navView.SelectionChanged += (_, args) =>
         {
             if (args.SelectedItemContainer?.Tag is string panelTag)
@@ -925,6 +948,7 @@ public sealed partial class MainWindow : Window
         _pendingArchbishopProcessId = null;
         RenderMembers();
         RefreshScheduledJobsProcessOptions();
+        RefreshHpTriggerProcessOptions();
         if (_mousePointTestProcessComboBox is not null)
         {
             _mousePointTestProcessComboBox.ItemsSource = null;
@@ -1587,6 +1611,271 @@ public sealed partial class MainWindow : Window
         return true;
     }
 
+    private FrameworkElement BuildHpTriggerPanel()
+    {
+        var panel = new StackPanel { Spacing = 10, MaxWidth = 900 };
+        panel.Children.Add(new TextBlock { Text = "HP Trigger", FontWeight = FontWeights.Bold, FontSize = 16 });
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Watch selected clients. If any HP value falls below threshold, send teleport key to main process.",
+            Opacity = 0.85,
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var controls = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        _hpTriggerStartButton = new Button { Content = "Start HP Trigger" };
+        _hpTriggerStartButton.Click += (_, _) => SetHpTriggerEnabled(true);
+        _hpTriggerStopButton = new Button { Content = "Stop HP Trigger" };
+        _hpTriggerStopButton.Click += (_, _) => SetHpTriggerEnabled(false);
+        _hpTriggerStatusText = new TextBlock { Text = "Status: Idle", VerticalAlignment = VerticalAlignment.Center };
+        controls.Children.Add(_hpTriggerStartButton);
+        controls.Children.Add(_hpTriggerStopButton);
+        controls.Children.Add(_hpTriggerStatusText);
+        panel.Children.Add(controls);
+
+        var targetRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        targetRow.Children.Add(new TextBlock { Text = "Main Process:", VerticalAlignment = VerticalAlignment.Center });
+        _hpTriggerMainProcessComboBox = new ComboBox
+        {
+            Width = 320,
+            ItemsSource = _availableProcesses,
+            DisplayMemberPath = "DisplayName",
+            SelectedValuePath = "ProcessId",
+        };
+        targetRow.Children.Add(_hpTriggerMainProcessComboBox);
+        targetRow.Children.Add(new TextBlock { Text = "Teleport Key:", VerticalAlignment = VerticalAlignment.Center });
+        _hpTriggerTeleportKeyTextBox = new TextBox { Text = _hpTriggerTeleportKey, IsReadOnly = true, Width = 90 };
+        _hpTriggerTeleportKeyTextBox.KeyDown += (_, e) =>
+        {
+            string token = ConvertVirtualKeyToToken(e.Key);
+            if (token == "Esc")
+            {
+                e.Handled = true;
+                return;
+            }
+
+            if (token == "Back")
+            {
+                _hpTriggerTeleportKeyTextBox.Text = string.Empty;
+                _hpTriggerTeleportKey = string.Empty;
+                e.Handled = true;
+                return;
+            }
+
+            _hpTriggerTeleportKeyTextBox.Text = token;
+            _hpTriggerTeleportKey = token;
+            e.Handled = true;
+        };
+        targetRow.Children.Add(_hpTriggerTeleportKeyTextBox);
+        panel.Children.Add(targetRow);
+
+        var thresholdRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        thresholdRow.Children.Add(new TextBlock { Text = "HP Threshold (%):", VerticalAlignment = VerticalAlignment.Center });
+        _hpTriggerThresholdTextBox = new TextBox { Text = _hpTriggerThresholdText, Width = 90 };
+        _hpTriggerThresholdTextBox.TextChanged += (_, _) => _hpTriggerThresholdText = _hpTriggerThresholdTextBox.Text;
+        thresholdRow.Children.Add(_hpTriggerThresholdTextBox);
+        panel.Children.Add(thresholdRow);
+
+        panel.Children.Add(new TextBlock { Text = "Watched Processes:", FontWeight = FontWeights.SemiBold });
+        _hpTriggerWatchHost = new StackPanel { Spacing = 4 };
+        panel.Children.Add(_hpTriggerWatchHost);
+
+        RefreshHpTriggerProcessOptions();
+        SetHpTriggerEnabled(false);
+        return panel;
+    }
+
+    private void RefreshHpTriggerProcessOptions()
+    {
+        if (_hpTriggerMainProcessComboBox is not null)
+        {
+            _hpTriggerMainProcessComboBox.ItemsSource = null;
+            _hpTriggerMainProcessComboBox.ItemsSource = _availableProcesses;
+            if (_pendingHpTriggerMainProcessId.HasValue && _availableProcesses.Any(p => p.ProcessId == _pendingHpTriggerMainProcessId.Value))
+            {
+                _hpTriggerMainProcessComboBox.SelectedValue = _pendingHpTriggerMainProcessId.Value;
+            }
+            else if (_availableProcesses.Count > 0 && _hpTriggerMainProcessComboBox.SelectedIndex < 0)
+            {
+                _hpTriggerMainProcessComboBox.SelectedIndex = 0;
+            }
+
+            _pendingHpTriggerMainProcessId = null;
+        }
+
+        if (_hpTriggerWatchHost is null)
+        {
+            return;
+        }
+
+        _hpTriggerWatchHost.Children.Clear();
+        _hpTriggerHpTextByProcessId.Clear();
+        var existing = new HashSet<int>(_availableProcesses.Select(p => p.ProcessId));
+        _hpTriggerWatchedProcessIds.RemoveWhere(pid => !existing.Contains(pid));
+        foreach (int pid in _hpTriggerBelowThresholdByProcessId.Keys.Where(pid => !existing.Contains(pid)).ToList())
+        {
+            _hpTriggerBelowThresholdByProcessId.Remove(pid);
+        }
+
+        foreach (RagnarokProcessInfo process in _availableProcesses)
+        {
+            var row = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            var cb = new CheckBox
+            {
+                Content = $"{process.DisplayName} ({process.ProcessId})",
+                IsChecked = _hpTriggerWatchedProcessIds.Contains(process.ProcessId),
+            };
+            var hpText = new TextBlock
+            {
+                Text = "HP: -",
+                VerticalAlignment = VerticalAlignment.Center,
+                Opacity = 0.85,
+                MinWidth = 80,
+            };
+            cb.Checked += (_, _) => _hpTriggerWatchedProcessIds.Add(process.ProcessId);
+            cb.Unchecked += (_, _) =>
+            {
+                _hpTriggerWatchedProcessIds.Remove(process.ProcessId);
+                _hpTriggerBelowThresholdByProcessId.Remove(process.ProcessId);
+            };
+            row.Children.Add(cb);
+            row.Children.Add(hpText);
+            _hpTriggerWatchHost.Children.Add(row);
+            _hpTriggerHpTextByProcessId[process.ProcessId] = hpText;
+        }
+    }
+
+    private void SetHpTriggerEnabled(bool enabled)
+    {
+        _hpTriggerEnabled = enabled;
+        if (enabled)
+        {
+            _hpTriggerBelowThresholdByProcessId.Clear();
+            StartHpTriggerLoop();
+            AppendLog("HP Trigger started.");
+        }
+        else
+        {
+            StopHpTriggerLoop();
+            AppendLog("HP Trigger stopped.");
+            foreach (TextBlock hpText in _hpTriggerHpTextByProcessId.Values)
+            {
+                hpText.Text = "HP: -";
+            }
+        }
+
+        if (_hpTriggerStartButton is not null && _hpTriggerStopButton is not null && _hpTriggerStatusText is not null)
+        {
+            _hpTriggerStartButton.IsEnabled = !_hpTriggerEnabled;
+            _hpTriggerStopButton.IsEnabled = _hpTriggerEnabled;
+            _hpTriggerStatusText.Text = _hpTriggerEnabled ? "Status: Running" : "Status: Idle";
+        }
+    }
+
+    private void StartHpTriggerLoop()
+    {
+        if (_hpTriggerTask is not null && !_hpTriggerTask.IsCompleted)
+        {
+            return;
+        }
+
+        _hpTriggerCts = new CancellationTokenSource();
+        _hpTriggerTask = Task.Run(() => RunHpTriggerLoopAsync(_hpTriggerCts.Token));
+    }
+
+    private void StopHpTriggerLoop()
+    {
+        try
+        {
+            _hpTriggerCts?.Cancel();
+            _hpTriggerTask?.Wait(1000);
+        }
+        catch
+        {
+            // no-op on shutdown/cancel
+        }
+        finally
+        {
+            _hpTriggerTask = null;
+            _hpTriggerCts = null;
+        }
+    }
+
+    private async Task RunHpTriggerLoopAsync(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            int? mainPid = null;
+            string key = string.Empty;
+            int threshold = 0;
+            List<int> watched = new();
+            List<int> visibleProcessIds = new();
+            int fallbackHpAddress = 0;
+
+            await RunOnUiThreadAsync(() =>
+            {
+                mainPid = _hpTriggerMainProcessComboBox?.SelectedValue is int selectedPid ? selectedPid : null;
+                key = (_hpTriggerTeleportKeyTextBox?.Text ?? string.Empty).Trim().ToUpperInvariant();
+                _ = int.TryParse((_hpTriggerThresholdTextBox?.Text ?? string.Empty).Trim(), out threshold);
+                watched = _hpTriggerWatchedProcessIds.ToList();
+                visibleProcessIds = _availableProcesses.Select(p => p.ProcessId).ToList();
+                _ = int.TryParse(_hpAddressTextBox.Text.Trim(), System.Globalization.NumberStyles.HexNumber, null, out fallbackHpAddress);
+            });
+
+            threshold = Math.Clamp(threshold, 0, 100);
+            var hpByPid = new Dictionary<int, RagnarokProcessService.HpSnapshot>();
+            foreach (int pid in visibleProcessIds)
+            {
+                RagnarokProcessService.HpSnapshot snapshot = _processService.TryReadHpSnapshot(pid, _supportedServers, fallbackHpAddress);
+                hpByPid[pid] = snapshot;
+            }
+
+            await RunOnUiThreadAsync(() =>
+            {
+                foreach ((int pid, RagnarokProcessService.HpSnapshot hp) in hpByPid)
+                {
+                    if (_hpTriggerHpTextByProcessId.TryGetValue(pid, out TextBlock? hpText))
+                    {
+                        hpText.Text = hp.HasValue
+                            ? hp.MaxHp > 0
+                                ? $"HP: {hp.CurrentHp}/{hp.MaxHp} ({hp.Percent}%)"
+                                : $"HP: {hp.CurrentHp}"
+                            : "HP: -";
+                    }
+                }
+            });
+
+            if (!mainPid.HasValue || string.IsNullOrWhiteSpace(key) || watched.Count == 0)
+            {
+                await Task.Delay(250, ct);
+                continue;
+            }
+
+            foreach (int watchedPid in watched)
+            {
+                if (!hpByPid.TryGetValue(watchedPid, out RagnarokProcessService.HpSnapshot hp) || !hp.HasValue)
+                {
+                    continue;
+                }
+
+                int hpPercent = hp.MaxHp > 0 ? hp.Percent : (int)Math.Clamp(hp.CurrentHp, 0, 100);
+                bool isBelow = hpPercent < threshold;
+                bool wasBelow = _hpTriggerBelowThresholdByProcessId.TryGetValue(watchedPid, out bool prev) && prev;
+                if (isBelow && !wasBelow)
+                {
+                    bool sent = _keyDispatchService.SendKey(mainPid.Value, key);
+                    await AppendScheduledLogAsync(sent
+                        ? $"HP Trigger: process {watchedPid} HP {hpPercent}% < {threshold}% -> teleport key {key} sent to {mainPid.Value}"
+                        : $"HP Trigger: failed to send teleport key {key} to {mainPid.Value} for process {watchedPid}");
+                }
+
+                _hpTriggerBelowThresholdByProcessId[watchedPid] = isBelow;
+            }
+
+            await Task.Delay(120, ct);
+        }
+    }
+
     private void ShowPanel(string panel)
     {
         if ((panel == "scheduled" || panel == "scheduled-actions") && !_scheduledJobsInitialized)
@@ -1611,6 +1900,7 @@ public sealed partial class MainWindow : Window
         _scheduledActionsPanel.Visibility = panel == "scheduled-actions" ? Visibility.Visible : Visibility.Collapsed;
         _scheduledJobsPanel.Visibility = panel == "scheduled" ? Visibility.Visible : Visibility.Collapsed;
         _mousePointsPanel.Visibility = panel == "mouse-points" ? Visibility.Visible : Visibility.Collapsed;
+        _hpTriggerPanel.Visibility = panel == "hp-trigger" ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private string GetCharacterName(string processIdText)
@@ -2270,6 +2560,11 @@ public sealed partial class MainWindow : Window
                 EnableAudioCue = _audioCueCheckBox.IsChecked == true,
                 MouseFocusSettleDelayMs = _keyDispatchService.FocusSettleDelayMs,
                 ArchbishopProcessId = _archbishopProcessComboBox.SelectedValue as int?,
+                HpTriggerEnabled = _hpTriggerEnabled,
+                HpTriggerMainProcessId = _hpTriggerMainProcessComboBox?.SelectedValue is int hpMainPid ? hpMainPid : null,
+                HpTriggerTeleportKey = _hpTriggerTeleportKeyTextBox?.Text,
+                HpTriggerThresholdText = _hpTriggerThresholdTextBox?.Text,
+                HpTriggerWatchedProcessIds = _hpTriggerWatchedProcessIds.ToList(),
                 MousePoints = _mousePoints.Select(p => new MousePointProfile
                 {
                     Id = p.Id,
@@ -2366,6 +2661,24 @@ public sealed partial class MainWindow : Window
             _mouseFocusSettleDelayTextBox.Text = (profile.MouseFocusSettleDelayMs ?? _keyDispatchService.FocusSettleDelayMs).ToString();
             _ = ApplyMouseFocusSettleDelayFromSettings(logResult: false);
             _pendingArchbishopProcessId = profile.ArchbishopProcessId;
+            _hpTriggerEnabled = profile.HpTriggerEnabled ?? false;
+            _hpTriggerTeleportKey = string.IsNullOrWhiteSpace(profile.HpTriggerTeleportKey) ? "F1" : profile.HpTriggerTeleportKey!;
+            _hpTriggerThresholdText = string.IsNullOrWhiteSpace(profile.HpTriggerThresholdText) ? "30" : profile.HpTriggerThresholdText!;
+            _hpTriggerWatchedProcessIds.Clear();
+            foreach (int pid in profile.HpTriggerWatchedProcessIds ?? new List<int>())
+            {
+                _hpTriggerWatchedProcessIds.Add(pid);
+            }
+            if (_hpTriggerTeleportKeyTextBox is not null)
+            {
+                _hpTriggerTeleportKeyTextBox.Text = _hpTriggerTeleportKey;
+            }
+            if (_hpTriggerThresholdTextBox is not null)
+            {
+                _hpTriggerThresholdTextBox.Text = _hpTriggerThresholdText;
+            }
+            _pendingHpTriggerMainProcessId = profile.HpTriggerMainProcessId;
+            SetHpTriggerEnabled(_hpTriggerEnabled);
             _mousePoints.Clear();
             foreach (MousePointProfile point in profile.MousePoints ?? new List<MousePointProfile>())
             {
@@ -2519,6 +2832,11 @@ public sealed partial class MainWindow : Window
         public bool EnableAudioCue { get; set; } = true;
         public int? MouseFocusSettleDelayMs { get; set; }
         public int? ArchbishopProcessId { get; set; }
+        public bool? HpTriggerEnabled { get; set; }
+        public int? HpTriggerMainProcessId { get; set; }
+        public string? HpTriggerTeleportKey { get; set; }
+        public string? HpTriggerThresholdText { get; set; }
+        public List<int>? HpTriggerWatchedProcessIds { get; set; }
         public List<MousePointProfile> MousePoints { get; set; } = new();
         public List<TriggerProfile> Triggers { get; set; } = new();
     }

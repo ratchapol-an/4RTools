@@ -11,6 +11,12 @@ public sealed class RagnarokProcessService
 {
     private readonly ProcessMemoryReader _memoryReader = new();
 
+    public readonly record struct HpSnapshot(uint CurrentHp, uint MaxHp)
+    {
+        public bool HasValue => MaxHp > 0 || CurrentHp > 0;
+        public int Percent => MaxHp > 0 ? (int)Math.Clamp(Math.Round(CurrentHp * 100.0 / MaxHp), 0, 100) : 0;
+    }
+
     public IReadOnlyList<RagnarokProcessInfo> DiscoverProcesses(
         IReadOnlyCollection<SupportedServerEntry> supportedServers,
         int fallbackHpAddress,
@@ -144,6 +150,103 @@ public sealed class RagnarokProcessService
         lines.Add($"Fallback raw={fRawHex}");
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    public uint TryReadHpValue(
+        int processId,
+        IReadOnlyCollection<SupportedServerEntry> supportedServers,
+        int fallbackHpAddress)
+    {
+        HpSnapshot snapshot = TryReadHpSnapshot(processId, supportedServers, fallbackHpAddress);
+        if (!snapshot.HasValue)
+        {
+            return 0;
+        }
+
+        return snapshot.MaxHp > 0 ? (uint)snapshot.Percent : snapshot.CurrentHp;
+    }
+
+    public HpSnapshot TryReadHpSnapshot(
+        int processId,
+        IReadOnlyCollection<SupportedServerEntry> supportedServers,
+        int fallbackHpAddress)
+    {
+        try
+        {
+            Process process = Process.GetProcessById(processId);
+            if (process.HasExited)
+            {
+                return default;
+            }
+
+            string processName = process.ProcessName;
+            int moduleBase = 0;
+            try
+            {
+                moduleBase = process.MainModule?.BaseAddress.ToInt32() ?? 0;
+            }
+            catch
+            {
+                moduleBase = 0;
+            }
+
+            List<SupportedServerEntry> matches = supportedServers
+                .Where(s => string.Equals(
+                    s.ProcessName?.Trim().Replace(".exe", string.Empty, StringComparison.OrdinalIgnoreCase),
+                    processName,
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            foreach (SupportedServerEntry match in matches)
+            {
+                HpSnapshot byServer = TryReadHpSnapshotByBaseAddress(processId, match.HpAddress, moduleBase);
+                if (byServer.HasValue)
+                {
+                    return byServer;
+                }
+            }
+
+            return TryReadHpSnapshotByBaseAddress(processId, fallbackHpAddress, moduleBase);
+        }
+        catch
+        {
+            return default;
+        }
+    }
+
+    private HpSnapshot TryReadHpSnapshotByBaseAddress(int processId, int hpBaseAddress, int moduleBase)
+    {
+        uint current = TryReadUInt32WithOptionalModuleBase(processId, hpBaseAddress, moduleBase);
+        uint max = TryReadUInt32WithOptionalModuleBase(processId, hpBaseAddress + 4, moduleBase);
+        if (max > 0 || current > 0)
+        {
+            return new HpSnapshot(current, max);
+        }
+
+        return default;
+    }
+
+    private uint TryReadUInt32WithOptionalModuleBase(int processId, int address, int moduleBase)
+    {
+        uint value = _memoryReader.TryReadUInt32(processId, address);
+        if (value > 0)
+        {
+            return value;
+        }
+
+        if (moduleBase > 0)
+        {
+            long candidate = (long)moduleBase + address;
+            if (candidate is > 0 and <= int.MaxValue)
+            {
+                value = _memoryReader.TryReadUInt32(processId, (int)candidate);
+                if (value > 0)
+                {
+                    return value;
+                }
+            }
+        }
+
+        return value;
     }
 
     private uint TryReadHp(int processId, int hpAddress, int moduleBase)
