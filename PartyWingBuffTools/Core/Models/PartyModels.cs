@@ -47,6 +47,8 @@ public sealed class TriggerSequenceConfig
 
     public required int IntervalSeconds { get; init; }
 
+    public required int DelayBeforeNextMs { get; init; }
+
     public required string TeleportKey { get; init; }
 
     public required int PostTeleportDelayMs { get; init; }
@@ -81,6 +83,8 @@ public sealed class DispatchAction
 public sealed class DispatchPlan
 {
     public required string TriggerName { get; init; }
+
+    public required int DelayBeforeNextMs { get; init; }
 
     public required IReadOnlyList<DispatchAction> Actions { get; init; }
 }

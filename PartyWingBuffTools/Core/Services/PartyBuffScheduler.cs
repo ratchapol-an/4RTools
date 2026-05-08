@@ -11,14 +11,20 @@ public sealed class PartyBuffScheduler
 
     public IReadOnlyList<DispatchPlan> BuildPlans(PartyConfig config, DateTimeOffset now)
     {
+        if (config.TriggerSequences.Count == 0)
+        {
+            return Array.Empty<DispatchPlan>();
+        }
+
+        TriggerSequenceConfig mainTrigger = config.TriggerSequences[0];
+        if (!IsTriggerDue(mainTrigger.Name, mainTrigger.IntervalSeconds, now))
+        {
+            return Array.Empty<DispatchPlan>();
+        }
+
         var plans = new List<DispatchPlan>();
         foreach (TriggerSequenceConfig trigger in config.TriggerSequences)
         {
-            if (!IsTriggerDue(trigger.Name, trigger.IntervalSeconds, now))
-            {
-                continue;
-            }
-
             var actions = new List<DispatchAction>
             {
                 new()
@@ -55,12 +61,12 @@ public sealed class PartyBuffScheduler
             plans.Add(new DispatchPlan
             {
                 TriggerName = trigger.Name,
+                DelayBeforeNextMs = Math.Max(0, trigger.DelayBeforeNextMs),
                 Actions = actions,
             });
-
-            _lastRunByTrigger[trigger.Name] = now;
         }
 
+        _lastRunByTrigger[mainTrigger.Name] = now;
         return plans;
     }
 

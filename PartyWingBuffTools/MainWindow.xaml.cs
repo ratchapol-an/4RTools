@@ -35,11 +35,10 @@ public sealed partial class MainWindow : Window
     private readonly PartyBuffScheduler _scheduler = new();
     private readonly List<RagnarokProcessInfo> _availableProcesses = new();
     private readonly List<TriggerDefinition> _triggers = new();
-    private readonly Queue<DispatchPlan> _triggerQueue = new();
-    private readonly object _triggerQueueLock = new();
     private readonly List<SupportedServerEntry> _supportedServers = new();
     private readonly Dictionary<TriggerDefinition, IReadOnlyList<Control>> _triggerVisuals = new();
     private readonly Dictionary<TriggerDefinition, TextBlock> _triggerIndicatorByTrigger = new();
+    private readonly Dictionary<TriggerDefinition, TextBox> _triggerIntervalBoxByTrigger = new();
     private readonly Dictionary<string, IReadOnlyList<Control>> _stepVisualsByReason = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TextBlock> _stepIndicatorByReason = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<MousePointDefinition> _mousePoints = new();
@@ -204,8 +203,8 @@ public sealed partial class MainWindow : Window
 
         ContentHost.Children.Add(navView);
 
-        AddTrigger("Buff60", "60", "F1", "300");
-        AddTrigger("Buff180", "180", "F1", "300");
+        AddTrigger("Buff60", "60", "F1", "300", "0");
+        AddTrigger("Buff180", string.Empty, "F1", "300", "0");
         SelectTrigger(_triggers.FirstOrDefault());
         ShowPanel("run");
 
@@ -493,6 +492,7 @@ public sealed partial class MainWindow : Window
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         header.Children.Add(HeaderText(string.Empty, 0));
@@ -501,8 +501,9 @@ public sealed partial class MainWindow : Window
         header.Children.Add(HeaderText("Interval(s)", 3));
         header.Children.Add(HeaderText("Teleport", 4));
         header.Children.Add(HeaderText("Post Delay(ms)", 5));
-        header.Children.Add(HeaderText("Members", 6));
-        header.Children.Add(HeaderText("Remove", 7));
+        header.Children.Add(HeaderText("Delay Next(ms)", 6));
+        header.Children.Add(HeaderText("Members", 7));
+        header.Children.Add(HeaderText("Remove", 8));
         Grid.SetRow(header, 1);
         wrapper.Children.Add(header);
 
@@ -556,7 +557,7 @@ public sealed partial class MainWindow : Window
         return wrapper;
     }
 
-    private void AddTrigger(string name = "", string interval = "", string teleport = "F1", string postDelay = "300", bool isActive = true)
+    private void AddTrigger(string name = "", string interval = "", string teleport = "F1", string postDelay = "300", string delayBeforeNext = "0", bool isActive = true)
     {
         var trigger = new TriggerDefinition
         {
@@ -565,6 +566,7 @@ public sealed partial class MainWindow : Window
             IntervalSecText = interval,
             TeleportKey = teleport,
             PostDelayText = postDelay,
+            DelayBeforeNextText = delayBeforeNext,
             Members = new List<MemberDefinition>(),
         };
         _triggers.Add(trigger);
@@ -576,6 +578,7 @@ public sealed partial class MainWindow : Window
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(95) });
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(110) });
+        rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(130) });
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         rowGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
@@ -593,6 +596,7 @@ public sealed partial class MainWindow : Window
         var intervalBox = new TextBox { Text = interval, PlaceholderText = "60", Width = 88, HorizontalAlignment = HorizontalAlignment.Left };
         var teleportBox = new TextBox { Text = teleport, PlaceholderText = "F1", IsReadOnly = true, Width = 88, HorizontalAlignment = HorizontalAlignment.Left };
         var delayBox = new TextBox { Text = postDelay, PlaceholderText = "300", Width = 100, HorizontalAlignment = HorizontalAlignment.Left };
+        var delayBeforeNextBox = new TextBox { Text = delayBeforeNext, PlaceholderText = "0", Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
         var membersButton = new Button { Content = "Edit", HorizontalAlignment = HorizontalAlignment.Left, MinWidth = 52 };
         var removeButton = new Button { Content = "X", MinWidth = 34 };
 
@@ -622,13 +626,16 @@ public sealed partial class MainWindow : Window
             e.Handled = true;
         };
         delayBox.TextChanged += (_, _) => trigger.PostDelayText = delayBox.Text;
+        delayBeforeNextBox.TextChanged += (_, _) => trigger.DelayBeforeNextText = delayBeforeNextBox.Text;
         membersButton.Click += (_, _) => SelectTrigger(trigger);
         removeButton.Click += (_, _) =>
         {
             _triggers.Remove(trigger);
             _triggerVisuals.Remove(trigger);
             _triggerIndicatorByTrigger.Remove(trigger);
+            _triggerIntervalBoxByTrigger.Remove(trigger);
             _triggerRowsHost.Children.Remove(rowGrid);
+            RefreshTriggerIntervalEditors();
             if (_selectedTrigger == trigger)
             {
                 SelectTrigger(_triggers.FirstOrDefault());
@@ -641,20 +648,45 @@ public sealed partial class MainWindow : Window
         Grid.SetColumn(intervalBox, 3);
         Grid.SetColumn(teleportBox, 4);
         Grid.SetColumn(delayBox, 5);
-        Grid.SetColumn(membersButton, 6);
-        Grid.SetColumn(removeButton, 7);
+        Grid.SetColumn(delayBeforeNextBox, 6);
+        Grid.SetColumn(membersButton, 7);
+        Grid.SetColumn(removeButton, 8);
         rowGrid.Children.Add(indicator);
         rowGrid.Children.Add(activeCheck);
         rowGrid.Children.Add(nameBox);
         rowGrid.Children.Add(intervalBox);
         rowGrid.Children.Add(teleportBox);
         rowGrid.Children.Add(delayBox);
+        rowGrid.Children.Add(delayBeforeNextBox);
         rowGrid.Children.Add(membersButton);
         rowGrid.Children.Add(removeButton);
 
-        _triggerVisuals[trigger] = new Control[] { nameBox, intervalBox, teleportBox, delayBox, membersButton };
+        _triggerVisuals[trigger] = new Control[] { nameBox, intervalBox, teleportBox, delayBox, delayBeforeNextBox, membersButton };
         _triggerIndicatorByTrigger[trigger] = indicator;
         _triggerRowsHost.Children.Add(rowGrid);
+        _triggerIntervalBoxByTrigger[trigger] = intervalBox;
+        RefreshTriggerIntervalEditors();
+    }
+
+    private void RefreshTriggerIntervalEditors()
+    {
+        for (int i = 0; i < _triggers.Count; i++)
+        {
+            TriggerDefinition trigger = _triggers[i];
+            if (!_triggerIntervalBoxByTrigger.TryGetValue(trigger, out TextBox? intervalBox))
+            {
+                continue;
+            }
+
+            bool isMainTrigger = i == 0;
+            intervalBox.IsEnabled = isMainTrigger;
+            intervalBox.PlaceholderText = isMainTrigger ? "60" : "N/A";
+            intervalBox.Visibility = isMainTrigger ? Visibility.Visible : Visibility.Collapsed;
+            if (!isMainTrigger)
+            {
+                intervalBox.Text = string.Empty;
+            }
+        }
     }
 
     private void SelectTrigger(TriggerDefinition? trigger)
@@ -937,10 +969,6 @@ public sealed partial class MainWindow : Window
         }
 
         _scheduler.Reset();
-        lock (_triggerQueueLock)
-        {
-            _triggerQueue.Clear();
-        }
         _runCts = new CancellationTokenSource();
         _startButton.IsEnabled = false;
         _stopButton.IsEnabled = true;
@@ -985,7 +1013,9 @@ public sealed partial class MainWindow : Window
                 continue;
             }
 
-            if (!int.TryParse(trigger.IntervalSecText.Trim(), out int intervalSec) || intervalSec <= 0)
+            bool isMainTrigger = trigger == _triggers.First();
+            int intervalSec = 1;
+            if (isMainTrigger && (!int.TryParse(trigger.IntervalSecText.Trim(), out intervalSec) || intervalSec <= 0))
             {
                 if (logValidationErrors)
                 {
@@ -997,6 +1027,11 @@ public sealed partial class MainWindow : Window
             if (!int.TryParse(trigger.PostDelayText.Trim(), out int postDelayMs))
             {
                 postDelayMs = 300;
+            }
+            int delayBeforeNextMs = 0;
+            if (int.TryParse(trigger.DelayBeforeNextText.Trim(), out int parsedDelayBeforeNext))
+            {
+                delayBeforeNextMs = Math.Max(0, parsedDelayBeforeNext);
             }
 
             var memberConfigs = new List<MemberSequenceConfig>();
@@ -1080,6 +1115,7 @@ public sealed partial class MainWindow : Window
             {
                 Name = name,
                 IntervalSeconds = intervalSec,
+                DelayBeforeNextMs = delayBeforeNextMs,
                 TeleportKey = teleportKey,
                 PostTeleportDelayMs = Math.Max(0, postDelayMs),
                 Members = memberConfigs,
@@ -1120,40 +1156,21 @@ public sealed partial class MainWindow : Window
             }
 
             IReadOnlyList<DispatchPlan> plans = _scheduler.BuildPlans(config, DateTimeOffset.UtcNow);
-            EnqueuePlans(plans);
-            if (TryDequeuePlan(out DispatchPlan plan))
+            if (plans.Count > 0)
             {
-                await ExecutePlanAsync(plan, ct);
+                for (int i = 0; i < plans.Count; i++)
+                {
+                    DispatchPlan plan = plans[i];
+                    await ExecutePlanAsync(plan, ct);
+                    if (i < plans.Count - 1 && plan.DelayBeforeNextMs > 0)
+                    {
+                        await Task.Delay(plan.DelayBeforeNextMs, ct);
+                    }
+                }
             }
 
             await Task.Delay(120, ct);
         }
-    }
-
-    private void EnqueuePlans(IEnumerable<DispatchPlan> plans)
-    {
-        lock (_triggerQueueLock)
-        {
-            foreach (DispatchPlan plan in plans)
-            {
-                _triggerQueue.Enqueue(plan);
-            }
-        }
-    }
-
-    private bool TryDequeuePlan(out DispatchPlan plan)
-    {
-        lock (_triggerQueueLock)
-        {
-            if (_triggerQueue.Count > 0)
-            {
-                plan = _triggerQueue.Dequeue();
-                return true;
-            }
-        }
-
-        plan = null!;
-        return false;
     }
 
     private async Task ExecutePlanAsync(DispatchPlan plan, CancellationToken ct)
@@ -2267,6 +2284,7 @@ public sealed partial class MainWindow : Window
                     IntervalSecText = t.IntervalSecText,
                     TeleportKey = t.TeleportKey,
                     PostDelayText = t.PostDelayText,
+                    DelayBeforeNextText = t.DelayBeforeNextText,
                     Members = t.Members.Select(m => new MemberProfile
                     {
                         IsActive = m.IsActive,
@@ -2366,6 +2384,7 @@ public sealed partial class MainWindow : Window
             _triggerRowsHost.Children.Clear();
             _triggerVisuals.Clear();
             _triggerIndicatorByTrigger.Clear();
+            _triggerIntervalBoxByTrigger.Clear();
             _stepVisualsByReason.Clear();
             _stepIndicatorByReason.Clear();
 
@@ -2376,6 +2395,7 @@ public sealed partial class MainWindow : Window
                     trigger.IntervalSecText ?? string.Empty,
                     trigger.TeleportKey ?? "F1",
                     trigger.PostDelayText ?? "300",
+                    trigger.DelayBeforeNextText ?? "0",
                     trigger.IsActive);
                 TriggerDefinition created = _triggers[^1];
                 created.Members.Clear();
@@ -2421,9 +2441,10 @@ public sealed partial class MainWindow : Window
 
             if (_triggers.Count == 0)
             {
-                AddTrigger("Buff60", "60", "F1", "300");
+                AddTrigger("Buff60", "60", "F1", "300", "0");
             }
 
+            RefreshTriggerIntervalEditors();
             SelectTrigger(_triggers.FirstOrDefault());
             RenderMembers();
 
@@ -2452,6 +2473,7 @@ public sealed partial class MainWindow : Window
         public required string IntervalSecText { get; set; }
         public required string TeleportKey { get; set; }
         public required string PostDelayText { get; set; }
+        public required string DelayBeforeNextText { get; set; }
         public required List<MemberDefinition> Members { get; set; }
     }
 
@@ -2508,6 +2530,7 @@ public sealed partial class MainWindow : Window
         public string? IntervalSecText { get; set; }
         public string? TeleportKey { get; set; }
         public string? PostDelayText { get; set; }
+        public string? DelayBeforeNextText { get; set; }
         public List<MemberProfile> Members { get; set; } = new();
     }
 
